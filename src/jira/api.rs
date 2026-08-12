@@ -16,7 +16,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/issue/{key} -> 裁剪字段 (支持直接传入 Issue Key 或完整网页 URL)
-    pub async fn get_issue(&self, key_or_url: &str) -> Result<Value> {
+    pub async fn get_issue(&self, key_or_url: &str, comments_limit: u32) -> Result<Value> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
         let raw = self
@@ -48,6 +48,40 @@ impl Jira {
             Value::Null
         };
 
+        let all_comments = raw["fields"]["comment"]["comments"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+
+        let total_comments = all_comments.len();
+
+        let comments_vec: Vec<Value> = if comments_limit > 0 {
+            all_comments
+                .iter()
+                .rev()
+                .take(comments_limit as usize)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|c| {
+                    let uname = c["author"]["name"].as_str().unwrap_or("");
+                    let dname = c["author"]["displayName"].as_str().unwrap_or("");
+                    json!({
+                        "id": c["id"],
+                        "author": {
+                            "username": uname,
+                            "displayName": dname,
+                            "mention_syntax": format!("[~{}]", uname),
+                        },
+                        "created": c["createdDate"].as_str().or(c["created"].as_str()).unwrap_or(""),
+                        "body": c["body"].as_str().unwrap_or(""),
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         Ok(json!({
             "key": raw["key"],
             "summary": raw["fields"]["summary"],
@@ -58,6 +92,8 @@ impl Jira {
             "priority": raw["fields"]["priority"]["name"],
             "labels": raw["fields"]["labels"],
             "description": raw["fields"]["description"],
+            "comments_count": total_comments,
+            "comments": comments_vec,
             "link": format!("{}/browse/{}", self.http.base_url(), raw["key"].as_str().unwrap_or(&key)),
         }))
     }
