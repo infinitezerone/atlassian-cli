@@ -50,7 +50,32 @@ install_file() {
   cp "$src" "${INSTALL_DIR}/atlassian-cli"
   chmod +x "${INSTALL_DIR}/atlassian-cli"
   echo "✅ 安装成功: ${INSTALL_DIR}/atlassian-cli"
-  echo "👉 运行 'atlassian-cli login' 完成配置"
+
+  # 自动检测 PATH 并写入环境变量配置文件 (.zshrc / .bashrc / .profile)
+  if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
+    echo "⚠️ 检测到 ${INSTALL_DIR} 尚未包含在环境变量 \$PATH 中，正在为您自动写入..."
+    SHELL_RC=""
+    if [ -f "$HOME/.zshrc" ] || [ "${SHELL:-}" = "/bin/zsh" ] || [ "${SHELL:-}" = "/opt/homebrew/bin/zsh" ]; then
+      SHELL_RC="$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+      SHELL_RC="$HOME/.bashrc"
+    elif [ -f "$HOME/.profile" ]; then
+      SHELL_RC="$HOME/.profile"
+    fi
+
+    if [ -n "$SHELL_RC" ]; then
+      if ! grep -q "${INSTALL_DIR}" "$SHELL_RC" 2>/dev/null; then
+        echo "" >> "$SHELL_RC"
+        echo "# atlassian-cli PATH" >> "$SHELL_RC"
+        echo "export PATH=\"${INSTALL_DIR}:\$PATH\"" >> "$SHELL_RC"
+        echo "✅ 已成功将 ${INSTALL_DIR} 追加至 ${SHELL_RC}"
+      fi
+    fi
+  fi
+
+  echo ""
+  echo "🎉 准备就绪！请运行 'exec \$SHELL' 刷新终端 (或打开新终端窗口)"
+  echo "👉 运行 'atlassian-cli login' 完成首次接入配置"
 }
 
 # 1) 本地产物优先
