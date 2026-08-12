@@ -1,104 +1,9 @@
 use anyhow::{bail, Result};
-use clap::Subcommand;
 use serde_json::{json, Value};
 
-use crate::config::Config;
+use super::cli::{CreateIssueArgs, UpdateIssueArgs};
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
 use crate::utils::{parse_jira_key, parse_username};
-
-#[derive(clap::Args)]
-pub struct CreateIssueArgs {
-    /// Jira 项目 Key (如 PROJ 或 PROJSA)
-    #[arg(long)]
-    pub project: String,
-    /// 单子标题/概要 (Summary)
-    #[arg(long)]
-    pub summary: String,
-    /// 单子类型 (默认 Task，可选 Bug / Story / Task 等)
-    #[arg(long, default_value = "Task")]
-    pub issue_type: String,
-    /// 单子详细描述 (Description)
-    #[arg(long)]
-    pub description: Option<String>,
-    /// 标签列表 (英文逗号分隔，如 "bug,backend")
-    #[arg(long)]
-    pub labels: Option<String>,
-    /// 指派人用户名 (Assignee username)
-    #[arg(long)]
-    pub assignee: Option<String>,
-    /// 优先级 (Priority，如 High / Medium / Low)
-    #[arg(long)]
-    pub priority: Option<String>,
-}
-
-#[derive(clap::Args)]
-pub struct UpdateIssueArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
-    pub key_or_url: String,
-    /// 新的单子标题/概要 (Summary)
-    #[arg(long)]
-    pub summary: Option<String>,
-    /// 新的单子详细描述 (Description)
-    #[arg(long)]
-    pub description: Option<String>,
-    /// 指派人用户名 (Assignee username)
-    #[arg(long)]
-    pub assignee: Option<String>,
-    /// 优先级 (Priority，如 High / Medium / Low)
-    #[arg(long)]
-    pub priority: Option<String>,
-    /// 标签列表 (英文逗号分隔，如 "bug,backend")
-    #[arg(long)]
-    pub labels: Option<String>,
-}
-
-/// Jira 模块的 CLI 子命令
-#[derive(Subcommand)]
-pub enum JiraActions {
-    /// 查询单子详情 (支持 Key 或网页 URL)
-    Get { key: String },
-    /// 在单子里加评论
-    Comment { key: String, text: String },
-    /// 流转单子状态 (按状态名,如 In Progress / Done)
-    Transition { key: String, status: String },
-    /// JQL 条件搜索单子 (如 "assignee = currentUser() AND status != Closed")
-    Search {
-        jql: String,
-        /// 最多返回条数 (默认 10)
-        #[arg(long, default_value_t = 10)]
-        limit: u32,
-    },
-    /// 创建新 Jira 单子
-    Create(CreateIssueArgs),
-    /// 更新已有 Jira 单子属性 (支持 Key 或网页 URL)
-    Update(UpdateIssueArgs),
-    /// 快捷指派/变更经办人 (支持 Key 或网页 URL)
-    Assign {
-        /// 单子 Key 或网页 URL
-        key: String,
-        /// 经办人用户名 (Assignee username)
-        assignee: String,
-    },
-    /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
-    User {
-        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
-        query: String,
-        /// 最多返回条数 (默认 10)
-        #[arg(long, default_value_t = 10)]
-        limit: u32,
-    },
-    /// 查询当前单子所有合法且在职的可指派同事列表 (对应网页端 Assignee 输入框提示)
-    AssignableUsers {
-        /// 单子 Key 或网页 URL
-        key: String,
-        /// 姓名或邮箱搜索过滤 (可选)
-        query: Option<String>,
-        /// 最多返回条数 (默认 10)
-        #[arg(long, default_value_t = 10)]
-        limit: u32,
-    },
-}
 
 /// Jira 产品客户端:一个方法 = 一个 API,新增 API 就在这加方法
 pub struct Jira {
@@ -106,6 +11,9 @@ pub struct Jira {
 }
 
 impl Jira {
+    pub fn new(http: HttpClient) -> Self {
+        Self { http }
+    }
 
     /// GET /rest/api/2/issue/{key} -> 裁剪字段 (支持直接传入 Issue Key 或完整网页 URL)
     pub async fn get_issue(&self, key_or_url: &str) -> Result<Value> {
@@ -177,50 +85,39 @@ impl Jira {
     pub async fn transition(&self, key_or_url: &str, status: &str) -> Result<Value> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
-        let raw = self
+        let meta = self
             .http
             .get(&format!("/rest/api/2/issue/{}/transitions", enc_key))
             .await?;
-        let transitions = raw["transitions"].as_array().cloned().unwrap_or_default();
-        let want = status.to_lowercase();
 
-        let matched = transitions.iter().find(|t| {
-            t["name"]
-                .as_str()
-                .map(|n| n.to_lowercase() == want)
-                .unwrap_or(false)
-                || t["to"]["name"]
-                    .as_str()
-                    .map(|n| n.to_lowercase() == want)
-                    .unwrap_or(false)
-        });
+        let trans_id = meta["transitions"]
+            .as_array()
+            .and_then(|arr| {
+                arr.iter().find(|t| {
+                    t["name"]
+                        .as_str()
+                        .map(|n| n.eq_ignore_ascii_case(status))
+                        .unwrap_or(false)
+                })
+            })
+            .and_then(|t| t["id"].as_str())
+            .ok_or_else(|| anyhow::anyhow!("未找到匹配的状态: '{}'。请检查可用流转状态名", status))?;
 
-        let Some(t) = matched else {
-            let available: Vec<String> = transitions
-                .iter()
-                .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
-                .collect();
-            bail!(
-                "状态 '{}' 不可用,该单可用的流转: {}",
-                status,
-                if available.is_empty() { "无".to_string() } else { available.join(" / ") }
-            );
-        };
-
-        let tid = t["id"]
-            .as_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| t["id"].to_string());
         self.http
             .post(
                 &format!("/rest/api/2/issue/{}/transitions", enc_key),
-                json!({ "transition": { "id": tid } }),
+                json!({ "transition": { "id": trans_id } }),
             )
             .await?;
-        Ok(json!({ "status": "success", "issue": key, "transition": status }))
+
+        Ok(json!({
+            "status": "success",
+            "issue": key,
+            "new_status": status,
+        }))
     }
 
-    /// GET /rest/api/2/search?jql=...&maxResults=...
+    /// GET /rest/api/2/search?jql={jql}&maxResults={limit}
     pub async fn search_issues(&self, jql: &str, limit: u32) -> Result<Value> {
         let limit_str = limit.to_string();
         let raw = self
@@ -231,45 +128,44 @@ impl Jira {
             )
             .await?;
 
-        let issues = raw["issues"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .map(|item| {
-                        let key = item["key"].as_str().unwrap_or("");
-                        json!({
-                            "key": key,
-                            "summary": item["fields"]["summary"],
-                            "status": item["fields"]["status"]["name"],
-                            "issue_type": item["fields"]["issuetype"]["name"],
-                            "assignee": item["fields"]["assignee"]["displayName"],
-                            "priority": item["fields"]["priority"]["name"],
-                            "updated": item["fields"]["updated"],
-                            "link": format!("{}/browse/{}", self.http.base_url(), key),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let issues = raw["issues"].as_array().map(|arr| {
+            arr.iter().map(|item| {
+                json!({
+                    "key": item["key"],
+                    "summary": item["fields"]["summary"],
+                    "status": item["fields"]["status"]["name"],
+                    "issue_type": item["fields"]["issuetype"]["name"],
+                    "assignee": item["fields"]["assignee"]["displayName"],
+                    "priority": item["fields"]["priority"]["name"],
+                    "link": format!("{}/browse/{}", self.http.base_url(), item["key"].as_str().unwrap_or("")),
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
 
         Ok(json!({
             "jql": jql,
+            "total": raw["total"],
             "count": issues.len(),
             "issues": issues,
         }))
     }
 
     /// POST /rest/api/2/issue
-    /// 参考 jira-operator 组装 Payload: fields = { project: {key}, summary, issuetype: {name}, description, labels, assignee: {name}, priority: {name} }
     pub async fn create_issue(&self, a: &CreateIssueArgs) -> Result<Value> {
-        let mut fields = json!({
-            "project": { "key": a.project },
-            "summary": a.summary,
-            "issuetype": { "name": a.issue_type },
-        });
+        let mut fields = serde_json::Map::new();
+        fields.insert("project".to_string(), json!({ "key": a.project }));
+        fields.insert("summary".to_string(), json!(a.summary));
+        fields.insert("issuetype".to_string(), json!({ "name": a.issue_type }));
 
         if let Some(ref desc) = a.description {
-            fields["description"] = json!(desc);
+            fields.insert("description".to_string(), json!(desc));
+        }
+        if let Some(ref assignee) = a.assignee {
+            let clean = parse_username(assignee);
+            fields.insert("assignee".to_string(), json!({ "name": clean }));
+        }
+        if let Some(ref priority) = a.priority {
+            fields.insert("priority".to_string(), json!({ "name": priority }));
         }
         if let Some(ref labels_str) = a.labels {
             let labels_vec: Vec<&str> = labels_str
@@ -277,13 +173,7 @@ impl Jira {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .collect();
-            fields["labels"] = json!(labels_vec);
-        }
-        if let Some(ref assignee) = a.assignee {
-            fields["assignee"] = json!({ "name": assignee });
-        }
-        if let Some(ref priority) = a.priority {
-            fields["priority"] = json!({ "name": priority });
+            fields.insert("labels".to_string(), json!(labels_vec));
         }
 
         let body = json!({ "fields": fields });
@@ -467,40 +357,5 @@ impl Jira {
             "is_ambiguous": is_ambiguous,
             "assignable_users": users,
         }))
-    }
-}
-
-impl AtlassianModule for Jira {
-    type Action = JiraActions;
-
-    fn module_name() -> &'static str {
-        "jira"
-    }
-
-    fn connect(cfg: &Config) -> Result<Self> {
-        crate::config::check_ready(cfg, "jira")?;
-        Ok(Self {
-            http: HttpClient::new(
-                cfg.jira_url.clone(),
-                &cfg.jira_token,
-                cfg.allow_insecure_certs,
-            )?,
-        })
-    }
-
-    async fn handle(&self, action: JiraActions) -> Result<Value> {
-        match action {
-            JiraActions::Get { key } => self.get_issue(&key).await,
-            JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,
-            JiraActions::Transition { key, status } => self.transition(&key, &status).await,
-            JiraActions::Search { jql, limit } => self.search_issues(&jql, limit).await,
-            JiraActions::Create(a) => self.create_issue(&a).await,
-            JiraActions::Update(a) => self.update_issue(&a).await,
-            JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,
-            JiraActions::User { query, limit } => self.search_users(&query, limit).await,
-            JiraActions::AssignableUsers { key, query, limit } => {
-                self.search_assignable_users(&key, query.as_deref(), limit).await
-            }
-        }
     }
 }

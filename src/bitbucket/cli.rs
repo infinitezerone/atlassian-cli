@@ -1,0 +1,88 @@
+use clap::{Args, Subcommand};
+
+#[derive(Args)]
+pub struct ListPrsArgs {
+    /// Bitbucket Project 名 (若提供 --url 则可省略)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若提供 --url 则可省略)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// 仓库网页 URL (例如 https://bitbucket.example.com/projects/PROJ/repos/my-repo)
+    #[arg(long)]
+    pub url: Option<String>,
+    /// PR 状态 (默认 OPEN，可选 OPEN / MERGED / DECLINED / ALL)
+    #[arg(long, default_value = "OPEN")]
+    pub state: String,
+    /// 最多返回条数 (默认 10)
+    #[arg(long, default_value_t = 10)]
+    pub limit: u32,
+}
+
+#[derive(Args)]
+pub struct CommentPrArgs {
+    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
+    pub id_or_url: String,
+    /// 评论文本内容
+    #[arg(long)]
+    pub text: String,
+}
+
+#[derive(Args)]
+pub struct CreatePrArgs {
+    #[arg(long)]
+    pub project: String,
+    #[arg(long)]
+    pub repo: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub description: String,
+    #[arg(long)]
+    pub from: String,
+    #[arg(long)]
+    pub to: String,
+}
+
+#[derive(Args)]
+pub struct GetPrArgs {
+    /// Bitbucket Project 名 (例如 PROJ，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (例如 my-repo，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或 https://gitpub.../pull-requests/2420/overview)
+    pub id_or_url: String,
+}
+
+/// Bitbucket 模块的 CLI 子命令
+#[derive(Subcommand)]
+pub enum BitbucketActions {
+    /// 查询 Pull Request 列表 (支持 --project --repo 或直接传入仓库网页 URL)
+    ListPrs(ListPrsArgs),
+    /// 创建 Pull Request
+    CreatePr(CreatePrArgs),
+    /// 获取 PR 详情 (支持直接传入网页 URL)
+    GetPr(GetPrArgs),
+    /// 查看 PR 代码修改差异与变动文件 (支持直接传入网页 URL)
+    DiffPr(GetPrArgs),
+    /// 查看 PR 的评论讨论树与活动记录 (支持直接传入网页 URL)
+    CommentsPr(GetPrArgs),
+    /// 在 PR 上发表评论 (支持直接传入网页 URL)
+    CommentPr(CommentPrArgs),
+    /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
+    User {
+        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
+        query: String,
+        /// 最多返回条数 (默认 10)
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
+}
