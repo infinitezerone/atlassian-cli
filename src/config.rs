@@ -46,7 +46,12 @@ pub fn config_dir() -> PathBuf {
 }
 
 pub fn config_path() -> PathBuf {
-    config_dir().join(CONFIG_FILE_NAME)
+    let path = config_dir().join(CONFIG_FILE_NAME);
+    if let Ok(abs) = fs::canonicalize(&path) {
+        abs
+    } else {
+        path
+    }
 }
 
 /// 读取配置,优先级:环境变量 > config.json 字段
@@ -181,7 +186,7 @@ pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
 
     println!("=== atlassian-cli 配置模式 ===");
     println!("说明: 请配置所需 Atlassian 产品的 Base URL 与 PAT Token。");
-    println!("配置仅保存在本地 ~/.atlassian-cli/config.json (权限 0600)。\n");
+    println!("配置仅保存在本地 {} (权限 0600)。\n", config_path().display());
 
     for module in target_modules {
         println!(">>> 配置 {} 模块", module.to_uppercase());
