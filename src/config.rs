@@ -79,12 +79,25 @@ pub fn load() -> Result<Config> {
         &mut cfg.confluence_url,
         &mut cfg.bitbucket_url,
     ] {
-        while url.ends_with('/') {
-            url.pop();
-        }
+        *url = normalize_url(url);
     }
 
     Ok(cfg)
+}
+
+/// 智能 URL 归一化: 自动去除前后空格、补全 https:// 前缀、删除末尾斜杠
+pub fn normalize_url(input: &str) -> String {
+    let mut trimmed = input.trim().to_string();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        trimmed = format!("https://{}", trimmed);
+    }
+    while trimmed.ends_with('/') {
+        trimmed.pop();
+    }
+    trimmed
 }
 
 /// 保存配置并强制收紧权限:目录 700、文件 600(仅当前用户可读写)
@@ -105,52 +118,159 @@ pub fn save(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-/// 交互式初始化: 引导输入 3 个 Base URL + 3 个 Token
-pub async fn init_interactive() -> Result<()> {
+/// 针对单个模块实时探测凭据有效性并返回可读用户名
+pub async fn probe_module_credential(
+    module: &str,
+    url: &str,
+    token: &str,
+    allow_insecure: bool,
+) -> Result<String> {
+    let client = HttpClient::new(url.to_string(), token, allow_insecure)?;
+    match module {
+        "jira" => {
+            let user = client.get("/rest/api/2/myself").await?;
+            let name = user["displayName"]
+                .as_str()
+                .or(user["name"].as_str())
+                .unwrap_or("已认证");
+            Ok(name.to_string())
+        }
+        "confluence" => {
+            let user = client.get("/rest/api/user/current").await?;
+            let name = user["displayName"]
+                .as_str()
+                .or(user["username"].as_str())
+                .unwrap_or("已认证");
+            Ok(name.to_string())
+        }
+        "bitbucket" => {
+            if let Ok(raw_uname) = client.get_text("/plugins/servlet/applinks/whoami").await {
+                let uname = raw_uname.trim();
+                if !uname.is_empty() {
+                    if let Ok(raw) = client
+                        .get_with_query("/rest/api/1.0/users", &[("filter", uname)])
+                        .await
+                    {
+                        if let Some(dname) = raw["values"][0]["displayName"].as_str() {
+                            return Ok(dname.to_string());
+                        }
+                    }
+                    return Ok(uname.to_string());
+                }
+            }
+            client.get("/rest/api/1.0/projects?limit=1").await?;
+            Ok("已连通".to_string())
+        }
+        _ => bail!("未知模块: {}", module),
+    }
+}
+
+/// 交互式初始化: 引导配置 URL 与 Token，边填边实时探测验证凭据 (支持指定单模块)
+pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
     let mut cfg = if config_path().exists() { load()? } else { Config::default() };
+
+    let target_modules: Vec<&str> = if let Some(m) = target_module {
+        let m_lower = m.trim().to_lowercase();
+        if !MODULES.contains(&m_lower.as_str()) {
+            bail!("未知模块: {} (可选: jira / confluence / bitbucket)", m);
+        }
+        vec![MODULES.iter().find(|&&x| x == m_lower.as_str()).cloned().unwrap()]
+    } else {
+        MODULES.to_vec()
+    };
 
     println!("=== atlassian-cli 配置模式 ===");
     println!("说明: 请配置所需 Atlassian 产品的 Base URL 与 PAT Token。");
     println!("配置仅保存在本地 ~/.atlassian-cli/config.json (权限 0600)。\n");
 
-    for module in MODULES {
-        let cur = match module {
-            "jira" => &mut cfg.jira_url,
-            "confluence" => &mut cfg.confluence_url,
-            _ => &mut cfg.bitbucket_url,
-        };
-        if cur.is_empty() {
-            let prompt = format!("Enter {} Base URL (留空跳过)", module);
-            let val = input_line(&prompt)?;
-            if !val.is_empty() {
-                *cur = val;
-            }
-        } else {
-            println!("  [{}] Base URL 已设置为: {}", module, cur);
-        }
-    }
+    for module in target_modules {
+        println!(">>> 配置 {} 模块", module.to_uppercase());
 
-    for module in MODULES {
-        let cur = match module {
-            "jira" => &mut cfg.jira_token,
-            "confluence" => &mut cfg.confluence_token,
-            _ => &mut cfg.bitbucket_token,
+        // 1. Base URL 配置
+        let cur_url = match module {
+            "jira" => &cfg.jira_url,
+            "confluence" => &cfg.confluence_url,
+            _ => &cfg.bitbucket_url,
         };
-        let existing = !cur.is_empty();
-        let prompt = if existing {
-            format!("Enter {} Token (已配置, 留空保留)", module)
+
+        let prompt_url = if cur_url.is_empty() {
+            format!("Enter {} Base URL (例如 https://{}.company.com, 留空跳过)", module, module)
         } else {
-            format!("Enter {} Token (留空跳过)", module)
+            format!("Enter {} Base URL (已配置: {}, 留空保留)", module, cur_url)
         };
-        let v = prompt_token(&prompt)?;
-        if !v.is_empty() {
-            *cur = v;
+
+        let raw_url = input_line(&prompt_url)?;
+        let url = if raw_url.is_empty() {
+            cur_url.clone()
+        } else {
+            normalize_url(&raw_url)
+        };
+
+        if url.is_empty() {
+            println!("  [{}] 已跳过 URL 配置。\n", module);
+            continue;
         }
+
+        match module {
+            "jira" => cfg.jira_url = url.clone(),
+            "confluence" => cfg.confluence_url = url.clone(),
+            _ => cfg.bitbucket_url = url.clone(),
+        }
+
+        // 2. Token 配置与实时验证循环
+        let cur_token = match module {
+            "jira" => &cfg.jira_token,
+            "confluence" => &cfg.confluence_token,
+            _ => &cfg.bitbucket_token,
+        };
+
+        let mut token = cur_token.clone();
+
+        loop {
+            let prompt_tok = if token.is_empty() {
+                format!("Enter {} PAT Token (暗显输入, 留空跳过)", module)
+            } else {
+                format!("Enter {} PAT Token (暗显输入, 已配置, 留空保留/测试)", module)
+            };
+
+            let input_tok = prompt_token(&prompt_tok)?;
+            if !input_tok.is_empty() {
+                token = input_tok;
+            }
+
+            if token.is_empty() {
+                println!("  [{}] 已跳过 Token 配置。\n", module);
+                break;
+            }
+
+            print!("  正在实时测试 {} 凭据 ({}) ... ", module, url);
+            std::io::stdout().flush().ok();
+
+            match probe_module_credential(module, &url, &token, cfg.allow_insecure_certs).await {
+                Ok(user_name) => {
+                    println!("SUCCESS (已认证: {})", user_name);
+                    match module {
+                        "jira" => cfg.jira_token = token.clone(),
+                        "confluence" => cfg.confluence_token = token.clone(),
+                        _ => cfg.bitbucket_token = token.clone(),
+                    }
+                    break;
+                }
+                Err(e) => {
+                    println!("FAILED ({})", e);
+                    let retry_ans = input_line("  凭据验证失败，是否重新输入 Token? [Y/n]")?;
+                    if retry_ans.eq_ignore_ascii_case("n") {
+                        println!("  [{}] 已跳过该 Token 校验。\n", module);
+                        break;
+                    }
+                }
+            }
+        }
+        println!();
     }
 
     save(&cfg)?;
-    println!();
-    let _ = test(&cfg).await;
+    println!("✅ 所有配置更新并保存完成！");
     Ok(())
 }
 
@@ -314,14 +434,11 @@ pub fn set_token(module: &str, token: &str) -> Result<()> {
     save(&cfg)
 }
 
-/// 设置某个模块的 Base URL
+/// 设置某个模块的 Base URL (自动 normalize 补全 protocol 并去除尾部斜杠)
 pub fn set_url(module: &str, url: &str) -> Result<()> {
-    let mut clean_url = url.trim().to_string();
+    let clean_url = normalize_url(url);
     if clean_url.is_empty() {
         bail!("url 不能为空");
-    }
-    while clean_url.ends_with('/') {
-        clean_url.pop();
     }
     let mut cfg = load()?;
     match module {
@@ -331,6 +448,19 @@ pub fn set_url(module: &str, url: &str) -> Result<()> {
         _ => bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module),
     }
     save(&cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_url() {
+        assert_eq!(normalize_url("jira.example.com"), "https://jira.example.com");
+        assert_eq!(normalize_url("  jira.example.com/  "), "https://jira.example.com");
+        assert_eq!(normalize_url("http://jira.example.com/jira/"), "http://jira.example.com/jira");
+        assert_eq!(normalize_url("https://gitpub.company.com"), "https://gitpub.company.com");
+    }
 }
 
 /// 清除某个模块的凭据与配置
