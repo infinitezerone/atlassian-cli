@@ -80,6 +80,14 @@ pub enum JiraActions {
         /// 经办人用户名 (Assignee username)
         assignee: String,
     },
+    /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
+    User {
+        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
+        query: String,
+        /// 最多返回条数 (默认 10)
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
 }
 
 /// Jira 产品客户端:一个方法 = 一个 API,新增 API 就在这加方法
@@ -97,13 +105,38 @@ impl Jira {
             .http
             .get(&format!("/rest/api/2/issue/{}", enc_key))
             .await?;
+
+        let assignee_val = if !raw["fields"]["assignee"].is_null() {
+            let uname = raw["fields"]["assignee"]["name"].as_str().unwrap_or("");
+            let dname = raw["fields"]["assignee"]["displayName"].as_str().unwrap_or("");
+            json!({
+                "username": uname,
+                "displayName": dname,
+                "mention_syntax": format!("[~{}]", uname),
+            })
+        } else {
+            Value::Null
+        };
+
+        let reporter_val = if !raw["fields"]["reporter"].is_null() {
+            let uname = raw["fields"]["reporter"]["name"].as_str().unwrap_or("");
+            let dname = raw["fields"]["reporter"]["displayName"].as_str().unwrap_or("");
+            json!({
+                "username": uname,
+                "displayName": dname,
+                "mention_syntax": format!("[~{}]", uname),
+            })
+        } else {
+            Value::Null
+        };
+
         Ok(json!({
             "key": raw["key"],
             "summary": raw["fields"]["summary"],
             "status": raw["fields"]["status"]["name"],
             "issue_type": raw["fields"]["issuetype"]["name"],
-            "assignee": raw["fields"]["assignee"]["displayName"],
-            "reporter": raw["fields"]["reporter"]["displayName"],
+            "assignee": assignee_val,
+            "reporter": reporter_val,
             "priority": raw["fields"]["priority"]["name"],
             "labels": raw["fields"]["labels"],
             "description": raw["fields"]["description"],
@@ -315,6 +348,53 @@ impl Jira {
             "link": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
+
+    /// GET /rest/api/2/user/search?username={query}&maxResults={limit}
+    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value> {
+        let limit_str = limit.to_string();
+        let raw = self
+            .http
+            .get_with_query(
+                "/rest/api/2/user/search",
+                &[("username", query), ("maxResults", &limit_str)],
+            )
+            .await?;
+
+        let q_lower = query.trim().to_lowercase();
+
+        let users = raw.as_array().map(|arr| {
+            arr.iter().map(|u| {
+                let username = u["name"].as_str().unwrap_or("");
+                let display_name = u["displayName"].as_str().unwrap_or("");
+                let email = u["emailAddress"].as_str().unwrap_or("");
+                let active = u["active"].as_bool().unwrap_or(true);
+
+                let exact_match = username.to_lowercase() == q_lower
+                    || display_name.to_lowercase() == q_lower
+                    || email.to_lowercase() == q_lower;
+
+                json!({
+                    "username": username,
+                    "displayName": display_name,
+                    "email": email,
+                    "active": active,
+                    "exact_match": exact_match,
+                    "mention_syntax": format!("[~{}]", username),
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        let has_exact = users.iter().any(|u| u["exact_match"] == true);
+        let is_ambiguous = users.len() > 1 && !has_exact;
+
+        Ok(json!({
+            "query": query,
+            "count": users.len(),
+            "has_exact_match": has_exact,
+            "is_ambiguous": is_ambiguous,
+            "users": users,
+        }))
+    }
 }
 
 impl AtlassianModule for Jira {
@@ -344,6 +424,7 @@ impl AtlassianModule for Jira {
             JiraActions::Create(a) => self.create_issue(&a).await,
             JiraActions::Update(a) => self.update_issue(&a).await,
             JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,
+            JiraActions::User { query, limit } => self.search_users(&query, limit).await,
         }
     }
 }
