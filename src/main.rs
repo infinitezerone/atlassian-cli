@@ -33,9 +33,15 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// 首次接入与配置初始化 (人类交互引导 + 连通性测试)
-    Setup,
+    Setup {
+        /// 可选指定要配置的模块 (jira / confluence / bitbucket)
+        module: Option<String>,
+    },
     /// 登录接入 (Setup 快捷别名)
-    Login,
+    Login {
+        /// 可选指定要配置的模块 (jira / confluence / bitbucket)
+        module: Option<String>,
+    },
     /// 查看配置状态、TLS 开关与服务连通身份 (Whoami)
     Status,
     /// 身份与状态查看 (Status 快捷别名)
@@ -111,9 +117,9 @@ async fn main() {
     // 装配层分发: 顶层快捷命令 + 业务模块 + 高级 config
     let result = match cli.command {
         // 顶层 Setup / Login 入口
-        Commands::Setup | Commands::Login => {
+        Commands::Setup { module } | Commands::Login { module } => {
             let r: Result<Value> = (async {
-                config::init_interactive().await?;
+                config::init_interactive(module.as_deref()).await?;
                 Ok(json!({ "status": "ok" }))
             })
             .await;
@@ -138,7 +144,7 @@ async fn main() {
             let r: Result<Value> = (async {
                 match action {
                     ConfigActions::Init => {
-                        config::init_interactive().await?;
+                        config::init_interactive(None).await?;
                         Ok(json!({ "status": "ok" }))
                     }
                     ConfigActions::Set { module, stdin, token } => {

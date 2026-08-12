@@ -42,7 +42,7 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 
 | Product | Command | Description |
 | :--- | :--- | :--- |
-| **Auth** | `login` / `setup` | Interactive configuration setup & credential check |
+| **Auth** | `login [MODULE]` / `setup` | Interactive setup with real-time probe & URL normalization (supports `login jira`) |
 | | `status` / `whoami` | Inspect config state, TLS flags, and PAT identities |
 | **Jira** | `jira search <JQL>` | JQL query search with slim JSON output |
 | | `jira get <KEY/URL>` | Fetch issue details (accepts Key or browser URL) |
