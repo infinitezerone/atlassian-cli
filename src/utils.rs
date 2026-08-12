@@ -87,6 +87,40 @@ pub fn parse_bitbucket_pr(
     Ok((p.to_string(), r.to_string(), trimmed.to_string()))
 }
 
+/// 从 Bitbucket 仓库 URL 或 (project, repo) 参数提取 (project, repo)
+pub fn parse_bitbucket_repo(
+    repo_url: Option<&str>,
+    project: Option<&str>,
+    repo: Option<&str>,
+) -> Result<(String, String)> {
+    if let Some(input) = repo_url {
+        let trimmed = input.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            let proj_idx = trimmed
+                .find("/projects/")
+                .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /projects/ 路径"))?;
+            let repo_idx = trimmed
+                .find("/repos/")
+                .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /repos/ 路径"))?;
+
+            let p = &trimmed[proj_idx + "/projects/".len()..repo_idx];
+            let after_repo = &trimmed[repo_idx + "/repos/".len()..];
+            let r = after_repo.split(&['/', '?', '#'][..]).next().unwrap_or(after_repo);
+
+            if !p.is_empty() && !r.is_empty() {
+                return Ok((p.to_string(), r.to_string()));
+            }
+        }
+    }
+
+    let p = project.unwrap_or("").trim();
+    let r = repo.unwrap_or("").trim();
+    if p.is_empty() || r.is_empty() {
+        anyhow::bail!("必须提供 --project 和 --repo 参数（或传入 --url 完整仓库/PR 网页链接）");
+    }
+    Ok((p.to_string(), r.to_string()))
+}
+
 /// 从传入的用户名字符串中智能剥离 [~username] / @{username} / @username 等装饰标记
 ///
 /// 支持格式:
