@@ -5,7 +5,26 @@ use serde_json::{json, Value};
 use crate::config::Config;
 use crate::http::HttpClient;
 use crate::module::AtlassianModule;
-use crate::utils::parse_bitbucket_pr;
+use crate::utils::{parse_bitbucket_pr, parse_bitbucket_repo};
+
+#[derive(Args)]
+pub struct ListPrsArgs {
+    /// Bitbucket Project 名 (若提供 --url 则可省略)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若提供 --url 则可省略)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// 仓库网页 URL (例如 https://bitbucket.example.com/projects/PROJ/repos/my-repo)
+    #[arg(long)]
+    pub url: Option<String>,
+    /// PR 状态 (默认 OPEN，可选 OPEN / MERGED / DECLINED / ALL)
+    #[arg(long, default_value = "OPEN")]
+    pub state: String,
+    /// 最多返回条数 (默认 10)
+    #[arg(long, default_value_t = 10)]
+    pub limit: u32,
+}
 
 #[derive(Args)]
 pub struct CommentPrArgs {
@@ -25,6 +44,8 @@ pub struct CommentPrArgs {
 /// Bitbucket 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum BitbucketActions {
+    /// 查询 Pull Request 列表 (支持 --project --repo 或直接传入仓库网页 URL)
+    ListPrs(ListPrsArgs),
     /// 创建 Pull Request
     CreatePr(CreatePrArgs),
     /// 获取 PR 详情 (支持直接传入网页 URL)
@@ -352,6 +373,78 @@ impl Bitbucket {
             "users": users,
         }))
     }
+
+    /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests?state={state}&limit={limit}
+    pub async fn list_prs(&self, a: &ListPrsArgs) -> Result<Value> {
+        let (project, repo) = parse_bitbucket_repo(
+            a.url.as_deref(),
+            a.project.as_deref(),
+            a.repo.as_deref(),
+        )?;
+
+        let state_upper = a.state.to_uppercase();
+        let limit_str = a.limit.to_string();
+
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo)
+        );
+
+        let raw = self
+            .http
+            .get_with_query(
+                &path,
+                &[("state", &state_upper), ("limit", &limit_str)],
+            )
+            .await?;
+
+        let prs = raw["values"].as_array().map(|arr| {
+            arr.iter().map(|item| {
+                let id = item["id"].as_i64().unwrap_or(0);
+                let title = item["title"].as_str().unwrap_or("");
+                let state = item["state"].as_str().unwrap_or("");
+                let author_uname = item["author"]["user"]["name"].as_str().unwrap_or("");
+                let author_dname = item["author"]["user"]["displayName"].as_str().unwrap_or("");
+                let from_branch = item["fromRef"]["displayId"].as_str().unwrap_or("");
+                let to_branch = item["toRef"]["displayId"].as_str().unwrap_or("");
+                let created_date = item["createdDate"].as_i64().unwrap_or(0);
+                let updated_date = item["updatedDate"].as_i64().unwrap_or(0);
+
+                let web_url = format!(
+                    "{}/projects/{}/repos/{}/pull-requests/{}",
+                    self.http.base_url(),
+                    project,
+                    repo,
+                    id
+                );
+
+                json!({
+                    "id": id,
+                    "title": title,
+                    "state": state,
+                    "author": {
+                        "username": author_uname,
+                        "displayName": author_dname,
+                        "mention_syntax": format!("@{{{}}}", author_uname),
+                    },
+                    "from_branch": from_branch,
+                    "to_branch": to_branch,
+                    "created_date": created_date,
+                    "updated_date": updated_date,
+                    "url": web_url,
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        Ok(json!({
+            "project": project,
+            "repo": repo,
+            "state": state_upper,
+            "count": prs.len(),
+            "pull_requests": prs,
+        }))
+    }
 }
 
 
@@ -376,6 +469,7 @@ impl AtlassianModule for Bitbucket {
 
     async fn handle(&self, action: BitbucketActions) -> Result<Value> {
         match action {
+            BitbucketActions::ListPrs(a) => self.list_prs(&a).await,
             BitbucketActions::CreatePr(a) => self.create_pr(&a).await,
             BitbucketActions::GetPr(a) => self.get_pr(&a).await,
             BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,

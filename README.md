@@ -55,7 +55,8 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | | `jira assignable-users <KEY/URL> [Q]` | Search valid assignable users for an issue (matches webpage autocomplete) |
 | **Confluence** | `confluence search <Q>` | Full-text search pages |
 | | `confluence get <ID/URL> [--raw]` | Fetch page body (plain-text by default; supports `--max-chars` & `--offset`) |
-| **Bitbucket** | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
+| **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |
+| | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
 | | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
