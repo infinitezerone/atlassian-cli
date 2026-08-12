@@ -86,3 +86,36 @@ pub fn parse_bitbucket_pr(
     }
     Ok((p.to_string(), r.to_string(), trimmed.to_string()))
 }
+
+/// 从传入的用户名字符串中智能剥离 [~username] / @{username} / @username 等装饰标记
+///
+/// 支持格式:
+/// - `john.doe` → `john.doe`
+/// - `[~john.doe]` → `john.doe`
+/// - `@{john.doe}` → `john.doe`
+/// - `@john.doe` → `john.doe`
+pub fn parse_username(input: &str) -> String {
+    let mut trimmed = input.trim();
+    if trimmed.starts_with("[~") && trimmed.ends_with(']') {
+        trimmed = &trimmed[2..trimmed.len() - 1];
+    } else if trimmed.starts_with("@{") && trimmed.ends_with('}') {
+        trimmed = &trimmed[2..trimmed.len() - 1];
+    } else if trimmed.starts_with('@') {
+        trimmed = &trimmed[1..];
+    }
+    trimmed.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_username() {
+        assert_eq!(parse_username("john.doe"), "john.doe");
+        assert_eq!(parse_username("[~john.doe]"), "john.doe");
+        assert_eq!(parse_username("@{john.doe}"), "john.doe");
+        assert_eq!(parse_username("@john.doe"), "john.doe");
+        assert_eq!(parse_username("  [~john.doe]  "), "john.doe");
+    }
+}

@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use crate::config::Config;
 use crate::http::HttpClient;
 use crate::module::AtlassianModule;
-use crate::utils::parse_jira_key;
+use crate::utils::{parse_jira_key, parse_username};
 
 #[derive(clap::Args)]
 pub struct CreateIssueArgs {
@@ -84,6 +84,16 @@ pub enum JiraActions {
     User {
         /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
         query: String,
+        /// 最多返回条数 (默认 10)
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
+    /// 查询当前单子所有合法且在职的可指派同事列表 (对应网页端 Assignee 输入框提示)
+    AssignableUsers {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 姓名或邮箱搜索过滤 (可选)
+        query: Option<String>,
         /// 最多返回条数 (默认 10)
         #[arg(long, default_value_t = 10)]
         limit: u32,
@@ -301,7 +311,8 @@ impl Jira {
             fields.insert("description".to_string(), json!(desc));
         }
         if let Some(ref assignee) = a.assignee {
-            fields.insert("assignee".to_string(), json!({ "name": assignee }));
+            let clean = parse_username(assignee);
+            fields.insert("assignee".to_string(), json!({ "name": clean }));
         }
         if let Some(ref priority) = a.priority {
             fields.insert("priority".to_string(), json!({ "name": priority }));
@@ -332,11 +343,12 @@ impl Jira {
         }))
     }
 
-    /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL)
+    /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL，自动剥离 [~...] 装饰)
     pub async fn assign_issue(&self, key_or_url: &str, assignee: &str) -> Result<Value> {
         let key = parse_jira_key(key_or_url);
+        let clean_assignee = parse_username(assignee);
         let enc_key = urlencoding::encode(&key);
-        let body = json!({ "name": assignee });
+        let body = json!({ "name": clean_assignee });
         self.http
             .put(&format!("/rest/api/2/issue/{}/assignee", enc_key), body)
             .await?;
@@ -344,7 +356,7 @@ impl Jira {
         Ok(json!({
             "status": "success",
             "key": key,
-            "assignee": assignee,
+            "assignee": clean_assignee,
             "link": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
@@ -395,6 +407,67 @@ impl Jira {
             "users": users,
         }))
     }
+
+    /// GET /rest/api/2/user/assignable/search?issueKey={key}&username={query}&maxResults={limit}
+    pub async fn search_assignable_users(
+        &self,
+        key_or_url: &str,
+        query: Option<&str>,
+        limit: u32,
+    ) -> Result<Value> {
+        let key = parse_jira_key(key_or_url);
+        let limit_str = limit.to_string();
+        let q = query.unwrap_or("");
+
+        let raw = self
+            .http
+            .get_with_query(
+                "/rest/api/2/user/assignable/search",
+                &[
+                    ("issueKey", &key),
+                    ("username", q),
+                    ("maxResults", &limit_str),
+                ],
+            )
+            .await?;
+
+        let q_lower = q.trim().to_lowercase();
+
+        let users = raw.as_array().map(|arr| {
+            arr.iter().map(|u| {
+                let username = u["name"].as_str().unwrap_or("");
+                let display_name = u["displayName"].as_str().unwrap_or("");
+                let email = u["emailAddress"].as_str().unwrap_or("");
+                let active = u["active"].as_bool().unwrap_or(true);
+
+                let exact_match = !q_lower.is_empty()
+                    && (username.to_lowercase() == q_lower
+                        || display_name.to_lowercase() == q_lower
+                        || email.to_lowercase() == q_lower);
+
+                json!({
+                    "username": username,
+                    "displayName": display_name,
+                    "email": email,
+                    "active": active,
+                    "exact_match": exact_match,
+                    "mention_syntax": format!("[~{}]", username),
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        let has_exact = users.iter().any(|u| u["exact_match"] == true);
+        let is_ambiguous = users.len() > 1 && !has_exact;
+
+        Ok(json!({
+            "issue_key": key,
+            "query": q,
+            "count": users.len(),
+            "has_exact_match": has_exact,
+            "is_ambiguous": is_ambiguous,
+            "assignable_users": users,
+        }))
+    }
 }
 
 impl AtlassianModule for Jira {
@@ -425,6 +498,9 @@ impl AtlassianModule for Jira {
             JiraActions::Update(a) => self.update_issue(&a).await,
             JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,
             JiraActions::User { query, limit } => self.search_users(&query, limit).await,
+            JiraActions::AssignableUsers { key, query, limit } => {
+                self.search_assignable_users(&key, query.as_deref(), limit).await
+            }
         }
     }
 }
