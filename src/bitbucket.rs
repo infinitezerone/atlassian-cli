@@ -1,0 +1,331 @@
+use anyhow::Result;
+use clap::{Args, Subcommand};
+use serde_json::{json, Value};
+
+use crate::config::Config;
+use crate::http::HttpClient;
+use crate::module::AtlassianModule;
+use crate::utils::parse_bitbucket_pr;
+
+#[derive(Args)]
+pub struct CommentPrArgs {
+    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
+    pub id_or_url: String,
+    /// 评论文本内容
+    #[arg(long)]
+    pub text: String,
+}
+
+/// Bitbucket 模块的 CLI 子命令
+#[derive(Subcommand)]
+pub enum BitbucketActions {
+    /// 创建 Pull Request
+    CreatePr(CreatePrArgs),
+    /// 获取 PR 详情 (支持直接传入网页 URL)
+    GetPr(GetPrArgs),
+    /// 查看 PR 代码修改差异与变动文件 (支持直接传入网页 URL)
+    DiffPr(GetPrArgs),
+    /// 查看 PR 的评论讨论树与活动记录 (支持直接传入网页 URL)
+    CommentsPr(GetPrArgs),
+    /// 在 PR 上发表评论 (支持直接传入网页 URL)
+    CommentPr(CommentPrArgs),
+}
+
+#[derive(Args)]
+pub struct CreatePrArgs {
+    #[arg(long)]
+    pub project: String,
+    #[arg(long)]
+    pub repo: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub description: String,
+    #[arg(long)]
+    pub from: String,
+    #[arg(long)]
+    pub to: String,
+}
+
+#[derive(Args)]
+pub struct GetPrArgs {
+    /// Bitbucket Project 名 (例如 PROJ，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (例如 my-repo，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或 https://gitpub.../pull-requests/2420/overview)
+    pub id_or_url: String,
+}
+
+/// Bitbucket 产品客户端
+pub struct Bitbucket {
+    http: HttpClient,
+}
+
+impl Bitbucket {
+
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests
+    pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value> {
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
+            urlencoding::encode(&a.project),
+            urlencoding::encode(&a.repo)
+        );
+        let body = json!({
+            "title": a.title,
+            "description": a.description,
+            "fromRef": { "id": format!("refs/heads/{}", a.from) },
+            "toRef": { "id": format!("refs/heads/{}", a.to) },
+            "reviewers": []
+        });
+        let raw = self.http.post(&path, body).await?;
+        Ok(json!({
+            "status": "success",
+            "pr_id": raw["id"],
+            "title": raw["title"],
+            "state": raw["state"],
+            "from": raw["fromRef"]["displayId"],
+            "to": raw["toRef"]["displayId"],
+            "link": raw["links"]["self"][0]["href"],
+        }))
+    }
+
+    /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id} (支持直接传入完整 PR 网页 URL)
+    pub async fn get_pr(&self, a: &GetPrArgs) -> Result<Value> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let raw = self.http.get(&path).await?;
+        Ok(json!({
+            "pr_id": raw["id"],
+            "title": raw["title"],
+            "state": raw["state"],
+            "from": raw["fromRef"]["displayId"],
+            "to": raw["toRef"]["displayId"],
+            "author": raw["author"]["user"]["displayName"],
+            "created": raw["createdDate"],
+            "link": raw["links"]["self"][0]["href"],
+        }))
+    }
+
+    /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/changes 与 /diff
+    pub async fn get_pr_diff(&self, a: &GetPrArgs) -> Result<Value> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+
+        let changes_path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/changes",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let changes_raw = self
+            .http
+            .get_with_query(&changes_path, &[("limit", "100")])
+            .await?;
+
+        let files: Vec<Value> = changes_raw["values"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|item| {
+                        let path = item["path"]["toString"].as_str().unwrap_or("");
+                        let change_type = item["type"].as_str().unwrap_or("");
+                        json!({
+                            "path": path,
+                            "type": change_type,
+                            "percent_unchanged": item["percentUnchanged"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let diff_path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/diff",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let diff_raw = self.http.get(&diff_path).await;
+
+        let diffs = match diff_raw {
+            Ok(raw) => raw["diffs"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .take(20)
+                        .map(|d| {
+                            let src = d["source"]["toString"].as_str();
+                            let dst = d["destination"]["toString"].as_str();
+                            let file_name = dst.or(src).unwrap_or("");
+                            let hunks = d["hunks"]
+                                .as_array()
+                                .map(|harr| {
+                                    harr.iter()
+                                        .map(|h| {
+                                            let segments = h["segments"]
+                                                .as_array()
+                                                .map(|sarr| {
+                                                    sarr.iter()
+                                                        .map(|seg| {
+                                                            let stype = seg["type"].as_str().unwrap_or("");
+                                                            let lines: Vec<String> = seg["lines"]
+                                                                .as_array()
+                                                                .map(|larr| {
+                                                                    larr.iter()
+                                                                        .filter_map(|l| {
+                                                                            l["line"]
+                                                                                .as_str()
+                                                                                .map(|s| s.to_string())
+                                                                        })
+                                                                        .collect()
+                                                                })
+                                                                .unwrap_or_default();
+                                                            json!({
+                                                                "type": stype,
+                                                                "lines_count": lines.len(),
+                                                                "snippet": lines.iter().take(15).cloned().collect::<Vec<_>>(),
+                                                            })
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                })
+                                                .unwrap_or_default();
+                                            json!({
+                                                "source_line": h["sourceLine"],
+                                                "destination_line": h["destinationLine"],
+                                                "segments": segments,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default();
+
+                            json!({
+                                "file": file_name,
+                                "hunks": hunks,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+
+        Ok(json!({
+            "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
+            "changed_files_count": files.len(),
+            "files": files,
+            "diffs": diffs,
+        }))
+    }
+
+    /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/activities
+    pub async fn get_pr_comments(&self, a: &GetPrArgs) -> Result<Value> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/activities",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let raw = self
+            .http
+            .get_with_query(&path, &[("limit", "100")])
+            .await?;
+
+        let comments = raw["values"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter(|act| act["action"].as_str() == Some("COMMENTED"))
+                    .map(|act| {
+                        let c = &act["comment"];
+                        let anchor = &act["commentAnchor"];
+                        json!({
+                            "id": c["id"],
+                            "author": c["author"]["displayName"],
+                            "text": c["text"],
+                            "created": c["createdDate"],
+                            "file_path": anchor["path"].as_str(),
+                            "line": anchor["line"],
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
+            "comments_count": comments.len(),
+            "comments": comments,
+        }))
+    }
+
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments
+    pub async fn add_pr_comment(&self, a: &CommentPrArgs) -> Result<Value> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/comments",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let body = json!({ "text": a.text });
+        let raw = self.http.post(&path, body).await?;
+
+        Ok(json!({
+            "status": "success",
+            "comment_id": raw["id"],
+            "pr_id": pr_id,
+            "author": raw["author"]["displayName"],
+            "text": raw["text"],
+        }))
+    }
+}
+
+
+
+impl AtlassianModule for Bitbucket {
+    type Action = BitbucketActions;
+
+    fn module_name() -> &'static str {
+        "bitbucket"
+    }
+
+    fn connect(cfg: &Config) -> Result<Self> {
+        crate::config::check_ready(cfg, "bitbucket")?;
+        Ok(Self {
+            http: HttpClient::new(
+                cfg.bitbucket_url.clone(),
+                &cfg.bitbucket_token,
+                cfg.allow_insecure_certs,
+            )?,
+        })
+    }
+
+    async fn handle(&self, action: BitbucketActions) -> Result<Value> {
+        match action {
+            BitbucketActions::CreatePr(a) => self.create_pr(&a).await,
+            BitbucketActions::GetPr(a) => self.get_pr(&a).await,
+            BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,
+            BitbucketActions::CommentsPr(a) => self.get_pr_comments(&a).await,
+            BitbucketActions::CommentPr(a) => self.add_pr_comment(&a).await,
+        }
+    }
+}
