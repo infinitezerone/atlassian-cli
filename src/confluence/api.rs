@@ -1,35 +1,8 @@
 use anyhow::Result;
-use clap::Subcommand;
 use serde_json::{json, Value};
 
-use crate::config::Config;
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
 use crate::utils::parse_confluence_id;
-
-/// Confluence 模块的 CLI 子命令
-#[derive(Subcommand)]
-pub enum ConfluenceActions {
-    /// 全文搜索页面
-    Search {
-        query: String,
-        /// 返回条数上限
-        #[arg(long, default_value_t = 10)]
-        limit: u32,
-    },
-    /// 获取页面正文 (默认转纯文本, --raw 输出原始 HTML)
-    Get {
-        id: String,
-        #[arg(long)]
-        raw: bool,
-        /// 最大输出字符数 (默认 8000，设为 0 表示不限制)
-        #[arg(long, default_value_t = 8000)]
-        max_chars: usize,
-        /// 字符起始偏移量 (用于续读超长文档)
-        #[arg(long, default_value_t = 0)]
-        offset: usize,
-    },
-}
 
 /// Confluence 产品客户端
 pub struct Confluence {
@@ -37,6 +10,9 @@ pub struct Confluence {
 }
 
 impl Confluence {
+    pub fn new(http: HttpClient) -> Self {
+        Self { http }
+    }
 
     /// GET /rest/api/content/search?cql=siteSearch~"q"
     pub async fn search(&self, query: &str, limit: u32) -> Result<Value> {
@@ -135,39 +111,6 @@ impl Confluence {
         }
 
         Ok(res)
-    }
-}
-
-
-
-impl AtlassianModule for Confluence {
-    type Action = ConfluenceActions;
-
-    fn module_name() -> &'static str {
-        "confluence"
-    }
-
-    fn connect(cfg: &Config) -> Result<Self> {
-        crate::config::check_ready(cfg, "confluence")?;
-        Ok(Self {
-            http: HttpClient::new(
-                cfg.confluence_url.clone(),
-                &cfg.confluence_token,
-                cfg.allow_insecure_certs,
-            )?,
-        })
-    }
-
-    async fn handle(&self, action: ConfluenceActions) -> Result<Value> {
-        match action {
-            ConfluenceActions::Search { query, limit } => self.search(&query, limit).await,
-            ConfluenceActions::Get {
-                id,
-                raw,
-                max_chars,
-                offset,
-            } => self.get_page(&id, raw, max_chars, offset).await,
-        }
     }
 }
 

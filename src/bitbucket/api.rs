@@ -1,98 +1,9 @@
 use anyhow::Result;
-use clap::{Args, Subcommand};
 use serde_json::{json, Value};
 
-use crate::config::Config;
+use super::cli::{CommentPrArgs, CreatePrArgs, GetPrArgs, ListPrsArgs};
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
 use crate::utils::{parse_bitbucket_pr, parse_bitbucket_repo};
-
-#[derive(Args)]
-pub struct ListPrsArgs {
-    /// Bitbucket Project 名 (若提供 --url 则可省略)
-    #[arg(long)]
-    pub project: Option<String>,
-    /// Bitbucket Repo 名 (若提供 --url 则可省略)
-    #[arg(long)]
-    pub repo: Option<String>,
-    /// 仓库网页 URL (例如 https://bitbucket.example.com/projects/PROJ/repos/my-repo)
-    #[arg(long)]
-    pub url: Option<String>,
-    /// PR 状态 (默认 OPEN，可选 OPEN / MERGED / DECLINED / ALL)
-    #[arg(long, default_value = "OPEN")]
-    pub state: String,
-    /// 最多返回条数 (默认 10)
-    #[arg(long, default_value_t = 10)]
-    pub limit: u32,
-}
-
-#[derive(Args)]
-pub struct CommentPrArgs {
-    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
-    pub project: Option<String>,
-    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
-    pub repo: Option<String>,
-    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
-    pub id_or_url: String,
-    /// 评论文本内容
-    #[arg(long)]
-    pub text: String,
-}
-
-/// Bitbucket 模块的 CLI 子命令
-#[derive(Subcommand)]
-pub enum BitbucketActions {
-    /// 查询 Pull Request 列表 (支持 --project --repo 或直接传入仓库网页 URL)
-    ListPrs(ListPrsArgs),
-    /// 创建 Pull Request
-    CreatePr(CreatePrArgs),
-    /// 获取 PR 详情 (支持直接传入网页 URL)
-    GetPr(GetPrArgs),
-    /// 查看 PR 代码修改差异与变动文件 (支持直接传入网页 URL)
-    DiffPr(GetPrArgs),
-    /// 查看 PR 的评论讨论树与活动记录 (支持直接传入网页 URL)
-    CommentsPr(GetPrArgs),
-    /// 在 PR 上发表评论 (支持直接传入网页 URL)
-    CommentPr(CommentPrArgs),
-    /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
-    User {
-        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
-        query: String,
-        /// 最多返回条数 (默认 10)
-        #[arg(long, default_value_t = 10)]
-        limit: u32,
-    },
-}
-
-#[derive(Args)]
-pub struct CreatePrArgs {
-    #[arg(long)]
-    pub project: String,
-    #[arg(long)]
-    pub repo: String,
-    #[arg(long)]
-    pub title: String,
-    #[arg(long)]
-    pub description: String,
-    #[arg(long)]
-    pub from: String,
-    #[arg(long)]
-    pub to: String,
-}
-
-#[derive(Args)]
-pub struct GetPrArgs {
-    /// Bitbucket Project 名 (例如 PROJ，若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
-    pub project: Option<String>,
-    /// Bitbucket Repo 名 (例如 my-repo，若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
-    pub repo: Option<String>,
-    /// PR ID 或完整 PR 网页 URL (例如 2420 或 https://gitpub.../pull-requests/2420/overview)
-    pub id_or_url: String,
-}
 
 /// Bitbucket 产品客户端
 pub struct Bitbucket {
@@ -100,6 +11,9 @@ pub struct Bitbucket {
 }
 
 impl Bitbucket {
+    pub fn new(http: HttpClient) -> Self {
+        Self { http }
+    }
 
     /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests
     pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value> {
@@ -444,38 +358,5 @@ impl Bitbucket {
             "count": prs.len(),
             "pull_requests": prs,
         }))
-    }
-}
-
-
-
-impl AtlassianModule for Bitbucket {
-    type Action = BitbucketActions;
-
-    fn module_name() -> &'static str {
-        "bitbucket"
-    }
-
-    fn connect(cfg: &Config) -> Result<Self> {
-        crate::config::check_ready(cfg, "bitbucket")?;
-        Ok(Self {
-            http: HttpClient::new(
-                cfg.bitbucket_url.clone(),
-                &cfg.bitbucket_token,
-                cfg.allow_insecure_certs,
-            )?,
-        })
-    }
-
-    async fn handle(&self, action: BitbucketActions) -> Result<Value> {
-        match action {
-            BitbucketActions::ListPrs(a) => self.list_prs(&a).await,
-            BitbucketActions::CreatePr(a) => self.create_pr(&a).await,
-            BitbucketActions::GetPr(a) => self.get_pr(&a).await,
-            BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,
-            BitbucketActions::CommentsPr(a) => self.get_pr_comments(&a).await,
-            BitbucketActions::CommentPr(a) => self.add_pr_comment(&a).await,
-            BitbucketActions::User { query, limit } => self.search_users(&query, limit).await,
-        }
     }
 }
