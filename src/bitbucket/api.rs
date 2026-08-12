@@ -220,7 +220,7 @@ impl Bitbucket {
         }))
     }
 
-    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments (支持全局评论与指定文件/行号的行内评论)
     pub async fn add_pr_comment(&self, a: &CommentPrArgs) -> Result<Value> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
         let path = format!(
@@ -229,15 +229,42 @@ impl Bitbucket {
             urlencoding::encode(&repo),
             urlencoding::encode(&pr_id)
         );
-        let body = json!({ "text": a.text });
+
+        let mut body = json!({ "text": a.text });
+
+        if let Some(ref file_path) = a.file {
+            let mut anchor = serde_json::Map::new();
+            anchor.insert("path".to_string(), json!(file_path));
+            if let Some(line_num) = a.line {
+                anchor.insert("line".to_string(), json!(line_num));
+                anchor.insert("lineType".to_string(), json!(a.line_type.to_uppercase()));
+                anchor.insert("fileType".to_string(), json!(a.file_type.to_uppercase()));
+            }
+            body["anchor"] = Value::Object(anchor);
+        }
+
         let raw = self.http.post(&path, body).await?;
+
+        let anchor_info = if !raw["commentAnchor"].is_null() {
+            json!({
+                "file_path": raw["commentAnchor"]["path"],
+                "line": raw["commentAnchor"]["line"],
+                "line_type": raw["commentAnchor"]["lineType"],
+                "file_type": raw["commentAnchor"]["fileType"],
+            })
+        } else {
+            Value::Null
+        };
 
         Ok(json!({
             "status": "success",
             "comment_id": raw["id"],
             "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
             "author": raw["author"]["displayName"],
             "text": raw["text"],
+            "anchor": anchor_info,
         }))
     }
 

@@ -32,6 +32,18 @@ pub struct CommentPrArgs {
     /// 评论文本内容
     #[arg(long)]
     pub text: String,
+    /// 行内评论的目标文件相对路径 (如 src/main.rs，不指定则为 PR 全局评论)
+    #[arg(long)]
+    pub file: Option<String>,
+    /// 行内评论的目标代码行号 (如 42)
+    #[arg(long)]
+    pub line: Option<u32>,
+    /// 目标代码行的 Diff 类型 (默认 ADDED，可选 ADDED / REMOVED / CONTEXT)
+    #[arg(long, default_value = "ADDED")]
+    pub line_type: String,
+    /// 目标文件视角 (默认 TO 表示修改后的目标文件，FROM 表示修改前)
+    #[arg(long, default_value = "TO")]
+    pub file_type: String,
 }
 
 #[derive(Args)]
