@@ -51,7 +51,8 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
 | | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority) |
 | | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels) |
-| | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user |
+| | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user (auto-sanitizes `[~...]` / `@{...}`) |
+| | `jira assignable-users <KEY/URL> [Q]` | Search valid assignable users for an issue (matches webpage autocomplete) |
 | **Confluence** | `confluence search <Q>` | Full-text search pages |
 | | `confluence get <ID/URL> [--raw]` | Fetch page body (plain-text by default; supports `--max-chars` & `--offset`) |
 | **Bitbucket** | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
