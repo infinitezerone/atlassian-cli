@@ -12,6 +12,10 @@ Designed for both human developers and **AI Coding Agents**. All commands output
 
 **Homebrew (macOS Recommended ⭐️)**
 ```bash
+# 1. (新版 Homebrew 首次使用需信任该 Tap)
+brew trust infinitezerone/tap
+
+# 2. 安装 atlassian-cli
 brew install infinitezerone/tap/atlassian-cli
 ```
 
