@@ -216,16 +216,35 @@ pub async fn test(cfg: &Config) -> Result<Value> {
         print!("  Checking Bitbucket ({}) ... ", cfg.bitbucket_url);
         std::io::stdout().flush().ok();
         match HttpClient::new(cfg.bitbucket_url.clone(), &cfg.bitbucket_token, cfg.allow_insecure_certs) {
-            Ok(client) => match client.get("/rest/api/1.0/projects?limit=1").await {
-                Ok(_) => {
-                    println!("SUCCESS (已连通)");
-                    results.insert("bitbucket".to_string(), json!({ "status": "ok" }));
+            Ok(client) => {
+                let user_res = async {
+                    let raw_uname = client.get_text("/plugins/servlet/applinks/whoami").await?;
+                    let uname = raw_uname.trim();
+                    if uname.is_empty() {
+                        anyhow::bail!("whoami returned empty username");
+                    }
+                    let raw = client.get_with_query("/rest/api/1.0/users", &[("filter", uname)]).await?;
+                    let dname = raw["values"][0]["displayName"].as_str().unwrap_or(uname);
+                    Ok::<String, anyhow::Error>(dname.to_string())
+                }.await;
+
+                match user_res {
+                    Ok(name) => {
+                        println!("SUCCESS (User: {})", name);
+                        results.insert("bitbucket".to_string(), json!({ "status": "ok", "user": name }));
+                    }
+                    Err(_) => match client.get("/rest/api/1.0/projects?limit=1").await {
+                        Ok(_) => {
+                            println!("SUCCESS (已连通)");
+                            results.insert("bitbucket".to_string(), json!({ "status": "ok" }));
+                        }
+                        Err(e) => {
+                            println!("FAILED ({})", e);
+                            results.insert("bitbucket".to_string(), json!({ "status": "error", "message": e.to_string() }));
+                        }
+                    },
                 }
-                Err(e) => {
-                    println!("FAILED ({})", e);
-                    results.insert("bitbucket".to_string(), json!({ "status": "error", "message": e.to_string() }));
-                }
-            },
+            }
             Err(e) => {
                 println!("FAILED ({})", e);
                 results.insert("bitbucket".to_string(), json!({ "status": "error", "message": e.to_string() }));
