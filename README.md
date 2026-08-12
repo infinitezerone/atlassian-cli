@@ -7,13 +7,19 @@ Atlassian 私有部署 (Data Center / Server) 统一 CLI：**Jira + Confluence +
 
 ### 1. 安装
 
-**方式 A：一键安装脚本（推荐）**
+**方式 A：Homebrew 一键安装（macOS 推荐 ⭐️）**
+
+```bash
+brew install infinitezerone/tap/atlassian-cli
+```
+
+**方式 B：一键 Shell 脚本**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infinitezerone/atlassian-cli/main/install.sh | sh
 ```
 
-**方式 B：源码编译**
+**方式 C：源码编译（需要 Rust 环境）**
 
 ```bash
 git clone https://github.com/infinitezerone/atlassian-cli.git
