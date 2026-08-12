@@ -46,6 +46,7 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | | `status` / `whoami` | Inspect config state, TLS flags, and PAT identities |
 | **Jira** | `jira search <JQL>` | JQL query search with slim JSON output |
 | | `jira get <KEY/URL>` | Fetch issue details (accepts Key or browser URL) |
+| | `jira user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `jira comment <KEY> <TEXT>` | Add a comment to an issue |
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
 | | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority) |
@@ -54,6 +55,7 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | **Confluence** | `confluence search <Q>` | Full-text search pages |
 | | `confluence get <ID/URL> [--raw]` | Fetch page body (plain-text by default; supports `--max-chars` & `--offset`) |
 | **Bitbucket** | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
+| | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
 | | `bitbucket comment-pr <URL/ID> --text "..."` | Post a code review comment |

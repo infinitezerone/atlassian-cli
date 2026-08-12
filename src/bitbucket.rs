@@ -35,6 +35,14 @@ pub enum BitbucketActions {
     CommentsPr(GetPrArgs),
     /// 在 PR 上发表评论 (支持直接传入网页 URL)
     CommentPr(CommentPrArgs),
+    /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
+    User {
+        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
+        query: String,
+        /// 最多返回条数 (默认 10)
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
 }
 
 #[derive(Args)]
@@ -297,6 +305,53 @@ impl Bitbucket {
             "text": raw["text"],
         }))
     }
+
+    /// GET /rest/api/1.0/users?filter={query}&limit={limit}
+    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value> {
+        let limit_str = limit.to_string();
+        let raw = self
+            .http
+            .get_with_query(
+                "/rest/api/1.0/users",
+                &[("filter", query), ("limit", &limit_str)],
+            )
+            .await?;
+
+        let q_lower = query.trim().to_lowercase();
+
+        let users = raw["values"].as_array().map(|arr| {
+            arr.iter().map(|u| {
+                let username = u["name"].as_str().unwrap_or("");
+                let display_name = u["displayName"].as_str().unwrap_or("");
+                let email = u["emailAddress"].as_str().unwrap_or("");
+                let active = u["active"].as_bool().unwrap_or(true);
+
+                let exact_match = username.to_lowercase() == q_lower
+                    || display_name.to_lowercase() == q_lower
+                    || email.to_lowercase() == q_lower;
+
+                json!({
+                    "username": username,
+                    "displayName": display_name,
+                    "email": email,
+                    "active": active,
+                    "exact_match": exact_match,
+                    "mention_syntax": format!("@{{{}}}", username),
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        let has_exact = users.iter().any(|u| u["exact_match"] == true);
+        let is_ambiguous = users.len() > 1 && !has_exact;
+
+        Ok(json!({
+            "query": query,
+            "count": users.len(),
+            "has_exact_match": has_exact,
+            "is_ambiguous": is_ambiguous,
+            "users": users,
+        }))
+    }
 }
 
 
@@ -326,6 +381,7 @@ impl AtlassianModule for Bitbucket {
             BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,
             BitbucketActions::CommentsPr(a) => self.get_pr_comments(&a).await,
             BitbucketActions::CommentPr(a) => self.add_pr_comment(&a).await,
+            BitbucketActions::User { query, limit } => self.search_users(&query, limit).await,
         }
     }
 }
