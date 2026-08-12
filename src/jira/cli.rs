@@ -49,8 +49,13 @@ pub struct UpdateIssueArgs {
 /// Jira 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum JiraActions {
-    /// 查询单子详情 (支持 Key 或网页 URL)
-    Get { key: String },
+    /// 查询单子详情 (支持 Key 或网页 URL，包含最新评论)
+    Get {
+        key: String,
+        /// 最多包含的最新评论条数 (默认 10，设为 0 可不返回评论)
+        #[arg(long, default_value_t = 10)]
+        comments_limit: u32,
+    },
     /// 在单子里加评论
     Comment { key: String, text: String },
     /// 流转单子状态 (按状态名,如 In Progress / Done)

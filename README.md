@@ -45,7 +45,7 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | **Auth** | `login [MODULE]` / `setup` | Interactive setup with real-time probe & URL normalization (supports `login jira`) |
 | | `status` / `whoami` | Inspect config state, TLS flags, and PAT identities |
 | **Jira** | `jira search <JQL>` | JQL query search with slim JSON output |
-| | `jira get <KEY/URL>` | Fetch issue details (accepts Key or browser URL) |
+| | `jira get <KEY/URL>` | Fetch issue details & comments (accepts Key or browser URL, `--comments-limit`) |
 | | `jira user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `jira comment <KEY> <TEXT>` | Add a comment to an issue |
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
