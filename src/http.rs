@@ -56,6 +56,19 @@ impl HttpClient {
         Self::parse(res).await
     }
 
+    /// 发起返回纯文本内容的 GET 请求 (适用于 /whoami 等非 JSON 接口)
+    pub async fn get_text(&self, path: &str) -> Result<String> {
+        let url = self.url(path);
+        let res = self.client.get(&url).send().await?;
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        if status.is_success() {
+            Ok(text)
+        } else {
+            Err(anyhow!("HTTP [{}] 请求失败", status))
+        }
+    }
+
     /// 发起带 Query 参数的 GET 请求 (自动对键值进行 urlencoding 编码)
     pub async fn get_with_query(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
         let url = self.build_url_with_query(path, query);
