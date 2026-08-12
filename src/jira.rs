@@ -32,6 +32,27 @@ pub struct CreateIssueArgs {
     pub priority: Option<String>,
 }
 
+#[derive(clap::Args)]
+pub struct UpdateIssueArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key_or_url: String,
+    /// 新的单子标题/概要 (Summary)
+    #[arg(long)]
+    pub summary: Option<String>,
+    /// 新的单子详细描述 (Description)
+    #[arg(long)]
+    pub description: Option<String>,
+    /// 指派人用户名 (Assignee username)
+    #[arg(long)]
+    pub assignee: Option<String>,
+    /// 优先级 (Priority，如 High / Medium / Low)
+    #[arg(long)]
+    pub priority: Option<String>,
+    /// 标签列表 (英文逗号分隔，如 "bug,backend")
+    #[arg(long)]
+    pub labels: Option<String>,
+}
+
 /// Jira 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum JiraActions {
@@ -50,6 +71,15 @@ pub enum JiraActions {
     },
     /// 创建新 Jira 单子
     Create(CreateIssueArgs),
+    /// 更新已有 Jira 单子属性 (支持 Key 或网页 URL)
+    Update(UpdateIssueArgs),
+    /// 快捷指派/变更经办人 (支持 Key 或网页 URL)
+    Assign {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 经办人用户名 (Assignee username)
+        assignee: String,
+    },
 }
 
 /// Jira 产品客户端:一个方法 = 一个 API,新增 API 就在这加方法
@@ -224,9 +254,68 @@ impl Jira {
             "link": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
+
+    /// PUT /rest/api/2/issue/{key} (支持直接传入 Issue Key 或网页 URL)
+    pub async fn update_issue(&self, a: &UpdateIssueArgs) -> Result<Value> {
+        let key = parse_jira_key(&a.key_or_url);
+        let enc_key = urlencoding::encode(&key);
+        let mut fields = serde_json::Map::new();
+
+        if let Some(ref sum) = a.summary {
+            fields.insert("summary".to_string(), json!(sum));
+        }
+        if let Some(ref desc) = a.description {
+            fields.insert("description".to_string(), json!(desc));
+        }
+        if let Some(ref assignee) = a.assignee {
+            fields.insert("assignee".to_string(), json!({ "name": assignee }));
+        }
+        if let Some(ref priority) = a.priority {
+            fields.insert("priority".to_string(), json!({ "name": priority }));
+        }
+        if let Some(ref labels_str) = a.labels {
+            let labels_vec: Vec<&str> = labels_str
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            fields.insert("labels".to_string(), json!(labels_vec));
+        }
+
+        if fields.is_empty() {
+            bail!("未提供任何需要更新的字段 (--summary, --description, --assignee, --priority, --labels)");
+        }
+
+        let body = json!({ "fields": fields });
+        self.http
+            .put(&format!("/rest/api/2/issue/{}", enc_key), body)
+            .await?;
+
+        Ok(json!({
+            "status": "success",
+            "key": key,
+            "updated_fields": fields.keys().cloned().collect::<Vec<_>>(),
+            "link": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
+
+    /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL)
+    pub async fn assign_issue(&self, key_or_url: &str, assignee: &str) -> Result<Value> {
+        let key = parse_jira_key(key_or_url);
+        let enc_key = urlencoding::encode(&key);
+        let body = json!({ "name": assignee });
+        self.http
+            .put(&format!("/rest/api/2/issue/{}/assignee", enc_key), body)
+            .await?;
+
+        Ok(json!({
+            "status": "success",
+            "key": key,
+            "assignee": assignee,
+            "link": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
 }
-
-
 
 impl AtlassianModule for Jira {
     type Action = JiraActions;
@@ -253,6 +342,8 @@ impl AtlassianModule for Jira {
             JiraActions::Transition { key, status } => self.transition(&key, &status).await,
             JiraActions::Search { jql, limit } => self.search_issues(&jql, limit).await,
             JiraActions::Create(a) => self.create_issue(&a).await,
+            JiraActions::Update(a) => self.update_issue(&a).await,
+            JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,
         }
     }
 }
