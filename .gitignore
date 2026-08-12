@@ -1,0 +1,9 @@
+/target
+Cargo.lock
+.DS_Store
+
+# 敏感文件:绝不提交
+config.json
+.env
+*.pem
+*.key
