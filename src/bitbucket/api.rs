@@ -25,7 +25,7 @@ impl Bitbucket {
 
         let mut reviewer_names: Vec<String> = Vec::new();
 
-        // 1. 自动尝试从网页端的 default-reviewers conditions 获取预设 Reviewer
+        // 1. 自动尝试从网页端的 default-reviewers conditions 获取预设 Reviewer (按源分支与目标分支精确过滤)
         if !a.no_default_reviewers {
             let cond_path = format!(
                 "/rest/default-reviewers/1.0/projects/{}/repos/{}/conditions",
@@ -35,11 +35,15 @@ impl Bitbucket {
             if let Ok(cond_raw) = self.http.get(&cond_path).await {
                 if let Some(arr) = cond_raw.as_array() {
                     for cond in arr {
-                        if let Some(revs) = cond["reviewers"].as_array() {
-                            for r in revs {
-                                if let Some(uname) = r["name"].as_str() {
-                                    if !uname.is_empty() && !reviewer_names.contains(&uname.to_string()) {
-                                        reviewer_names.push(uname.to_string());
+                        let source_match = matches_ref_matcher(&cond["sourceRefMatcher"], &a.from);
+                        let target_match = matches_ref_matcher(&cond["targetRefMatcher"], &a.to);
+                        if source_match && target_match {
+                            if let Some(revs) = cond["reviewers"].as_array() {
+                                for r in revs {
+                                    if let Some(uname) = r["name"].as_str() {
+                                        if !uname.is_empty() && !reviewer_names.contains(&uname.to_string()) {
+                                            reviewer_names.push(uname.to_string());
+                                        }
                                     }
                                 }
                             }
@@ -469,5 +473,61 @@ impl Bitbucket {
             "user": raw["user"]["displayName"].as_str().unwrap_or(""),
             "approved_status": raw["status"].as_str().unwrap_or("APPROVED"),
         }))
+    }
+}
+
+/// 校验分支名是否符合 Bitbucket Default Reviewers 的 RefMatcher 条件规则
+fn matches_ref_matcher(matcher: &Value, branch_name: &str) -> bool {
+    let m_type = matcher["type"]["id"].as_str().unwrap_or("");
+    let m_id = matcher["id"].as_str().unwrap_or("");
+    let m_display = matcher["displayId"].as_str().unwrap_or("");
+
+    match m_type {
+        "ANY_REF" => true,
+        "BRANCH" => {
+            m_id == format!("refs/heads/{}", branch_name) || m_display == branch_name
+        }
+        "MODEL_CATEGORY" => {
+            let cat = m_id.to_lowercase();
+            let b_lower = branch_name.to_lowercase();
+            b_lower.starts_with(&cat) || b_lower.contains(&format!("/{}/", cat)) || b_lower.contains(&format!("/{}", cat))
+        }
+        "PATTERN" => {
+            if m_display == "*" {
+                true
+            } else {
+                let pat_clean = m_display.replace('*', "");
+                branch_name.contains(&pat_clean)
+            }
+        }
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_matches_ref_matcher() {
+        let any_ref = json!({ "type": { "id": "ANY_REF" } });
+        assert!(matches_ref_matcher(&any_ref, "feature/test"));
+
+        let branch_ref = json!({
+            "type": { "id": "BRANCH" },
+            "id": "refs/heads/master",
+            "displayId": "master"
+        });
+        assert!(matches_ref_matcher(&branch_ref, "master"));
+        assert!(!matches_ref_matcher(&branch_ref, "release/6.2.0"));
+
+        let model_category = json!({
+            "type": { "id": "MODEL_CATEGORY" },
+            "id": "RELEASE",
+            "displayId": "Release"
+        });
+        assert!(matches_ref_matcher(&model_category, "release/6.2.0"));
+        assert!(!matches_ref_matcher(&model_category, "master"));
     }
 }
