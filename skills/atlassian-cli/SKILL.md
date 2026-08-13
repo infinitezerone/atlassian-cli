@@ -91,11 +91,27 @@ atlassian-cli confluence get 12345678 --offset 8000 --max-chars 8000
 atlassian-cli confluence get 12345678 --raw
 ```
 
+### Create & Update Pages (Macro-enabled)
+```bash
+# Create page (supports Date <time> pills & Jira issue cards)
+atlassian-cli confluence create --space PROJ --title "Release Notes 6.2.0" \
+  --body "Release date: <time datetime=\"2026-08-13\"/>\nRelated ticket: <ac:structured-macro ac:name=\"jira\"><ac:parameter ac:name=\"key\">PROJ-123</ac:parameter></ac:structured-macro>"
+
+# Local search & replace update (token-efficient, unique 1-match safety)
+atlassian-cli confluence update 12345678 --find "Target Version: v1.0" --replace "Target Version: v2.0"
+
+# Preview update diff without committing (--dry-run)
+atlassian-cli confluence update 12345678 --find "v1.0" --replace "v2.0" --dry-run
+
+# Append new section to page tail
+atlassian-cli confluence update 12345678 --append "## Discussion Notes\n- Approved by team"
+```
+
 ---
 
 ## 4. Bitbucket Workflow Commands (Code Review)
 
-### List Pull Requests
+### List & Create Pull Requests
 ```bash
 # List OPEN PRs in a repository (supports repo webpage URL)
 atlassian-cli bitbucket list-prs --url "https://gitpub.example.com/projects/PROJ/repos/my-repo" --state OPEN
@@ -116,7 +132,7 @@ atlassian-cli bitbucket diff-pr https://gitpub.example.com/projects/PROJ/repos/m
 atlassian-cli bitbucket comments-pr https://gitpub.example.com/projects/PROJ/repos/my-repo/pull-requests/100
 ```
 
-### Post Code Review Comments
+### Post Code Review Comments & Approve PR
 ```bash
 # General PR comment
 atlassian-cli bitbucket comment-pr 100 --text "LGTM, overall architecture is clean."
@@ -126,6 +142,9 @@ atlassian-cli bitbucket comment-pr 100 \
   --text "Consider adding null-check here to prevent NullPointerException" \
   --file "src/main/java/App.java" \
   --line 42
+
+# Approve Pull Request
+atlassian-cli bitbucket approve-pr 100
 ```
 
 ---

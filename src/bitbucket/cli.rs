@@ -101,6 +101,8 @@ pub enum BitbucketActions {
     CommentsPr(GetPrArgs),
     /// 在 PR 上发表评论 (支持直接传入网页 URL)
     CommentPr(CommentPrArgs),
+    /// 批准/同意 PR (Approve Pull Request，支持直接传入网页 URL)
+    ApprovePr(GetPrArgs),
     /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
     User {
         /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")

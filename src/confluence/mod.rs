@@ -36,6 +36,8 @@ impl AtlassianModule for Confluence {
                 max_chars,
                 offset,
             } => self.get_page(&id, raw, max_chars, offset).await,
+            ConfluenceActions::Create(a) => self.create_page(&a).await,
+            ConfluenceActions::Update(a) => self.update_page(&a).await,
         }
     }
 }

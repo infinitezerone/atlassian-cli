@@ -448,4 +448,26 @@ impl Bitbucket {
             "pull_requests": prs,
         }))
     }
+
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/approve (支持直接传入网页 URL)
+    pub async fn approve_pr(&self, a: &GetPrArgs) -> Result<Value> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/approve",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+        let raw = self.http.post(&path, json!({})).await?;
+
+        Ok(json!({
+            "status": "success",
+            "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
+            "approved": true,
+            "user": raw["user"]["displayName"].as_str().unwrap_or(""),
+            "approved_status": raw["status"].as_str().unwrap_or("APPROVED"),
+        }))
+    }
 }
