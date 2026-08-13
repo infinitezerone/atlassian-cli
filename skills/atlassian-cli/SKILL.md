@@ -149,35 +149,8 @@ atlassian-cli bitbucket approve-pr 100
 
 ---
 
-## 5. Bitrise Mobile CI/CD Commands (Read-Only)
+## 5. Safety & Operational Rules
 
-### List Apps & Accessible Repositories
-```bash
-atlassian-cli bitrise list-apps
-```
-
-### Search Build History & Status
-```bash
-# List builds for default or explicit app (supports --branch, --workflow, --status, --limit)
-atlassian-cli bitrise list-builds --app my-repo --branch main --limit 5
-
-# Filter failed builds (0: running, 1: success, 2: failed, 3: aborted)
-atlassian-cli bitrise list-builds --status 2
-```
-
-### Inspect Build Details & Read Logs
-```bash
-# Get build details (accepts build slug or direct webpage URL)
-atlassian-cli bitrise get-build https://app.bitrise.io/build/7c8e9f2a0b1c
-
-# Read build console execution logs (supports --max-chars)
-atlassian-cli bitrise get-log https://app.bitrise.io/build/7c8e9f2a0b1c --max-chars 8000
-```
-
----
-
-## 6. Safety & Operational Rules
-
-1. **Read Operations First**: Prefer inspecting issues (`jira get`), PR diffs (`bitbucket diff-pr`), pages (`confluence get`), or CI builds (`bitrise get-build`) before taking modifying actions.
+1. **Read Operations First**: Prefer inspecting issues (`jira get`), PR diffs (`bitbucket diff-pr`), or pages (`confluence get`) before taking modifying actions.
 2. **User Confirmation**: Confirm with the user before performing modifying actions like updating issues or posting comments unless explicitly asked.
 3. **No Unwanted Test Writes**: Never run write commands against live production instances for test purposes.

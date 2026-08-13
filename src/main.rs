@@ -1,5 +1,4 @@
 mod bitbucket;
-mod bitrise;
 mod config;
 mod confluence;
 mod http;
@@ -63,11 +62,6 @@ enum Commands {
     Bitbucket {
         #[command(subcommand)]
         action: bitbucket::BitbucketActions,
-    },
-    /// Bitrise 移动 CI/CD 只读操作
-    Bitrise {
-        #[command(subcommand)]
-        action: bitrise::BitriseActions,
     },
     /// 高级配置管理 (set / set-url / unset / path)
     Config {
@@ -159,7 +153,6 @@ async fn main() {
         Commands::Jira { action } => run::<jira::Jira>(&cfg, action).await,
         Commands::Confluence { action } => run::<confluence::Confluence>(&cfg, action).await,
         Commands::Bitbucket { action } => run::<bitbucket::Bitbucket>(&cfg, action).await,
-        Commands::Bitrise { action } => run::<bitrise::Bitrise>(&cfg, action).await,
         // 配置管理走独立分支(交互式 / 本地文件操作,不经过 HTTP 模块)
         Commands::Config { action } => {
             let r: Result<Value> = (async {
