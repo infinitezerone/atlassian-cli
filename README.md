@@ -68,8 +68,12 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
 | | `bitbucket comment-pr <URL/ID> --text "..."` | Post a comment on PR (supports `--file <PATH>` & `--line <NUM>` for inline comments) |
+| | `bitbucket create-pr --project P --repo R ...` | Create PR (auto-loads web default reviewers, supports extra `--reviewers`) |
 | | `bitbucket approve-pr <URL/ID>` | Approve Pull Request |
-| | `bitbucket create-pr ...` | Create PR (auto-loads web default reviewers, supports `--reviewers` & `--no-default-reviewers`) |
+| **Bitrise** | `bitrise list-apps` | List accessible mobile apps & App Slugs |
+| | `bitrise list-builds [--app A] [--branch B] ...` | Search CI build history & online status (supports `--branch`, `--workflow`, `--status`, `--limit`) |
+| | `bitrise get-build <SLUG/URL>` | Fetch build status, duration, Git commit info & artifact links (accepts webpage URL) |
+| | `bitrise get-log <SLUG/URL> [--max-chars N]` | Fetch build console execution log excerpt & raw download link (supports `--max-chars`) |
 | **Config** | `config set <module>` | Masked interactive Token configuration (`--stdin` for pipe input) |
 | | `config set-url <module> <URL>` | Update Base URL for a module |
 | | `config test` / `config status` | Verify connectivity & Token permissions |

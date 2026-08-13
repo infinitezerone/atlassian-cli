@@ -12,7 +12,7 @@ use crate::http::HttpClient;
 const CONFIG_DIR_NAME: &str = ".atlassian-cli";
 const CONFIG_FILE_NAME: &str = "config.json";
 
-const MODULES: [&str; 3] = ["jira", "confluence", "bitbucket"];
+const MODULES: [&str; 4] = ["jira", "confluence", "bitbucket", "bitrise"];
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -23,6 +23,9 @@ pub struct Config {
     pub confluence_token: String,
     pub bitbucket_url: String,
     pub bitbucket_token: String,
+    pub bitrise_url: String,
+    pub bitrise_token: String,
+    pub bitrise_app_slug: String,
     pub allow_insecure_certs: bool,
 }
 
@@ -35,6 +38,9 @@ impl Default for Config {
             confluence_token: String::new(),
             bitbucket_url: String::new(),
             bitbucket_token: String::new(),
+            bitrise_url: "https://api.bitrise.io".to_string(),
+            bitrise_token: String::new(),
+            bitrise_app_slug: String::new(),
             allow_insecure_certs: false,
         }
     }
@@ -73,6 +79,14 @@ pub fn load() -> Result<Config> {
     cfg.confluence_token = env_override(cfg.confluence_token, "CONFLUENCE_TOKEN");
     cfg.bitbucket_token = env_override(cfg.bitbucket_token, "BITBUCKET_TOKEN");
 
+    cfg.bitrise_url = env_override(cfg.bitrise_url, "BITRISE_URL");
+    cfg.bitrise_token = env_override(cfg.bitrise_token, "BITRISE_TOKEN");
+    cfg.bitrise_app_slug = env_override(cfg.bitrise_app_slug, "BITRISE_APP_SLUG");
+
+    if cfg.bitrise_url.is_empty() {
+        cfg.bitrise_url = "https://api.bitrise.io".to_string();
+    }
+
     if let Ok(val) = std::env::var("ALLOW_INSECURE_CERTS") {
         if val == "1" || val.eq_ignore_ascii_case("true") {
             cfg.allow_insecure_certs = true;
@@ -83,6 +97,7 @@ pub fn load() -> Result<Config> {
         &mut cfg.jira_url,
         &mut cfg.confluence_url,
         &mut cfg.bitbucket_url,
+        &mut cfg.bitrise_url,
     ] {
         *url = normalize_url(url);
     }
@@ -165,6 +180,14 @@ pub async fn probe_module_credential(
             }
             client.get("/rest/api/1.0/projects?limit=1").await?;
             Ok("已连通".to_string())
+        }
+        "bitrise" => {
+            let me = client.get("/v0.1/me").await?;
+            let uname = me["data"]["username"]
+                .as_str()
+                .or(me["data"]["email"].as_str())
+                .unwrap_or("已认证");
+            Ok(uname.to_string())
         }
         _ => bail!("未知模块: {}", module),
     }
@@ -545,6 +568,7 @@ pub fn check_ready(cfg: &Config, which: &str) -> Result<()> {
         "jira" => (&cfg.jira_url, &cfg.jira_token),
         "confluence" => (&cfg.confluence_url, &cfg.confluence_token),
         "bitbucket" => (&cfg.bitbucket_url, &cfg.bitbucket_token),
+        "bitrise" => (&cfg.bitrise_url, &cfg.bitrise_token),
         _ => return Err(anyhow!("未知模块: {}", which)),
     };
     if url.is_empty() {
