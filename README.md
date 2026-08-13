@@ -59,12 +59,15 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | | `jira assignable-users <KEY/URL> [Q]` | Search valid assignable users for an issue (matches webpage autocomplete) |
 | **Confluence** | `confluence search <Q>` | Full-text search pages |
 | | `confluence get <ID/URL> [--raw]` | Fetch page body (plain-text by default; supports `--max-chars` & `--offset`) |
+| | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
+| | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
 | **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |
 | | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
 | | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
 | | `bitbucket comment-pr <URL/ID> --text "..."` | Post a comment on PR (supports `--file <PATH>` & `--line <NUM>` for inline comments) |
+| | `bitbucket approve-pr <URL/ID>` | Approve Pull Request |
 | | `bitbucket create-pr ...` | Create PR (auto-loads web default reviewers, supports `--reviewers` & `--no-default-reviewers`) |
 | **Config** | `config set <module>` | Masked interactive Token configuration (`--stdin` for pipe input) |
 | | `config set-url <module> <URL>` | Update Base URL for a module |

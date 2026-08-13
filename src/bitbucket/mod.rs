@@ -35,6 +35,7 @@ impl AtlassianModule for Bitbucket {
             BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,
             BitbucketActions::CommentsPr(a) => self.get_pr_comments(&a).await,
             BitbucketActions::CommentPr(a) => self.add_pr_comment(&a).await,
+            BitbucketActions::ApprovePr(a) => self.approve_pr(&a).await,
             BitbucketActions::User { query, limit } => self.search_users(&query, limit).await,
         }
     }

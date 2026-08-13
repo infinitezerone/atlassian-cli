@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 
+use super::cli::{CreatePageArgs, UpdatePageArgs};
 use crate::http::HttpClient;
 use crate::utils::parse_confluence_id;
 
@@ -112,6 +113,138 @@ impl Confluence {
 
         Ok(res)
     }
+
+    /// POST /rest/api/content (创建新 Confluence 页面，原生支持时间宏、Jira 卡片宏)
+    pub async fn create_page(&self, a: &CreatePageArgs) -> Result<Value> {
+        let storage_html = format_to_storage_html(&a.body);
+        let mut body_json = json!({
+            "type": "page",
+            "title": a.title,
+            "space": { "key": a.space },
+            "body": {
+                "storage": {
+                    "value": storage_html,
+                    "representation": "storage"
+                }
+            }
+        });
+
+        if let Some(ref parent_id) = a.parent_id {
+            let clean_parent = parse_confluence_id(parent_id);
+            body_json["ancestors"] = json!([{ "id": clean_parent }]);
+        }
+
+        let raw = self.http.post("/rest/api/content", body_json).await?;
+        let page_id = raw["id"].as_str().unwrap_or("").to_string();
+
+        Ok(json!({
+            "status": "success",
+            "id": page_id,
+            "title": raw["title"],
+            "version": raw["version"]["number"],
+            "space": a.space,
+            "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), page_id),
+        }))
+    }
+
+    /// PUT /rest/api/content/{id} (安全更新 Confluence 页面，带 5 重准确性防御体系与版本备份)
+    pub async fn update_page(&self, a: &UpdatePageArgs) -> Result<Value> {
+        let id = parse_confluence_id(&a.id_or_url);
+        let path = format!("/rest/api/content/{}", urlencoding::encode(&id));
+
+        // 1. 获取原页面最新数据与 Version
+        let orig = self
+            .http
+            .get_with_query(&path, &[("expand", "body.storage,version")])
+            .await?;
+
+        let orig_title = orig["title"].as_str().unwrap_or("").to_string();
+        let orig_version = orig["version"]["number"].as_u64().unwrap_or(1);
+        let orig_html = orig["body"]["storage"]["value"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        let new_title = a.title.as_deref().unwrap_or(&orig_title);
+
+        // 2. 根据不同的编辑模式计算更新后的 HTML
+        let (new_html, mode_desc) = if let (Some(ref find_str), Some(ref replace_str)) = (&a.find, &a.replace) {
+            // A. 局部精准替换模式 (二义性校验与唯一匹配防御)
+            let count = orig_html.matches(find_str).count();
+            if count == 0 {
+                let trimmed_find = find_str.trim();
+                let count_trimmed = orig_html.matches(trimmed_find).count();
+                if count_trimmed == 1 {
+                    (orig_html.replace(trimmed_find, replace_str), "local_replace_trimmed".to_string())
+                } else if count_trimmed == 0 {
+                    anyhow::bail!("❌ 错误: 未在原页面中匹配到目标文本: '{}'。请使用 confluence get 确认最新页面内容", find_str);
+                } else {
+                    anyhow::bail!("❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段", count_trimmed);
+                }
+            } else if count > 1 {
+                anyhow::bail!("❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段", count);
+            } else {
+                (orig_html.replace(find_str, replace_str), "local_replace".to_string())
+            }
+        } else if let Some(ref append_str) = a.append {
+            // B. 末尾追加模式
+            let append_html = format_to_storage_html(append_str);
+            (format!("{}\n{}", orig_html, append_html), "append".to_string())
+        } else if let Some(ref prepend_str) = a.prepend {
+            // C. 顶部插入模式
+            let prepend_html = format_to_storage_html(prepend_str);
+            (format!("{}\n{}", prepend_html, orig_html), "prepend".to_string())
+        } else if let Some(ref body_str) = a.body {
+            // D. 全量覆盖模式
+            (format_to_storage_html(body_str), "full_overwrite".to_string())
+        } else {
+            anyhow::bail!("未提供任何更新内容。请使用 --find 与 --replace (局部替换)、--append (末尾追加)、--prepend (顶部插入) 或 --body (全量更新)");
+        };
+
+        // 3. 若为 dry_run 只读预览模式
+        if a.dry_run {
+            return Ok(json!({
+                "status": "dry_run_preview",
+                "id": id,
+                "title": new_title,
+                "current_version": orig_version,
+                "next_version": orig_version + 1,
+                "mode": mode_desc,
+                "find_target": a.find,
+                "replace_target": a.replace,
+                "orig_chars": orig_html.chars().count(),
+                "new_chars": new_html.chars().count(),
+                "hint": "只读预览完成。未真正提交修改。去掉 --dry-run 标志以保存修改至 Confluence。"
+            }));
+        }
+
+        // 4. 提交版本更新 PUT 请求
+        let put_body = json!({
+            "type": "page",
+            "title": new_title,
+            "version": { "number": orig_version + 1 },
+            "body": {
+                "storage": {
+                    "value": new_html,
+                    "representation": "storage"
+                }
+            }
+        });
+
+        let raw = self.http.put(&path, put_body).await?;
+        let next_version = raw["version"]["number"].as_u64().unwrap_or(orig_version + 1);
+
+        Ok(json!({
+            "status": "success",
+            "id": id,
+            "title": raw["title"],
+            "version": next_version,
+            "previous_version": orig_version,
+            "mode": mode_desc,
+            "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+            "note": format!("页面已成功更新至 Version {}。如需撤销修改，可在网页端点击 Page History 还原到 Version {}。", next_version, orig_version),
+        }))
+    }
 }
 
 /// 极简 HTML -> 纯文本:Confluence storage 格式正文转给 AI 阅读
@@ -147,4 +280,32 @@ fn html_to_text(html: &str) -> String {
     }
     let lines: Vec<&str> = out.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
     lines.join("\n")
+}
+
+/// 自动将纯文本/Markdown/HTML 转为 Confluence Storage 格式
+fn format_to_storage_html(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.starts_with('<') || trimmed.contains("<p>") || trimmed.contains("<ac:") || trimmed.contains("<time") {
+        text.to_string()
+    } else {
+        let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+        lines.iter().map(|l| format!("<p>{}</p>", l)).collect::<Vec<_>>().join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_to_storage_html() {
+        let plain = "Hello\nWorld";
+        assert_eq!(format_to_storage_html(plain), "<p>Hello</p>\n<p>World</p>");
+
+        let raw_macro = "<ac:structured-macro ac:name=\"jira\"><ac:parameter ac:name=\"key\">PROJ-123</ac:parameter></ac:structured-macro>";
+        assert_eq!(format_to_storage_html(raw_macro), raw_macro);
+
+        let date_macro = "<time datetime=\"2026-08-13\"/>";
+        assert_eq!(format_to_storage_html(date_macro), date_macro);
+    }
 }
