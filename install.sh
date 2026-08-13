@@ -4,8 +4,8 @@ set -euo pipefail
 # atlassian-cli 一键安装脚本
 #
 # 用法:
-#   ./install.sh                 # 优先安装本地编译产物(若有),否则从 GitHub Releases 下载
-#   ./install.sh -v v0.1.0       # 下载指定版本
+#   curl -fsSL https://raw.githubusercontent.com/infinitezerone/atlassian-cli/main/install.sh | sh
+#   ./install.sh -v v0.2.0       # 下载指定版本
 #   ./install.sh -l              # 强制安装本地编译产物 (target/release/atlassian-cli)
 
 REPO_OWNER="${REPO_OWNER:-infinitezerone}"
@@ -19,7 +19,7 @@ fi
 
 usage() {
   echo "用法: $0 [-v 版本] [-l]"
-  echo "  -v 版本   指定发布版本 (如 v0.1.0)"
+  echo "  -v 版本   指定发布版本 (如 v0.2.0)"
   echo "  -l        强制使用本地编译产物 (target/release/atlassian-cli)"
 }
 
@@ -36,12 +36,26 @@ done
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64 | amd64) ARCH="x64" ;;
-  arm64 | aarch64) ARCH="arm64" ;;
-  *) echo "暂不支持的架构: $ARCH"; exit 1 ;;
+
+case "$OS" in
+  darwin)
+    case "$ARCH" in
+      arm64 | aarch64) FILE="atlassian-cli-aarch64-apple-darwin.tar.gz" ;;
+      x86_64 | amd64)  FILE="atlassian-cli-x86_64-apple-darwin.tar.gz" ;;
+      *) echo "暂不支持的架构: $ARCH"; exit 1 ;;
+    esac
+    ;;
+  linux)
+    case "$ARCH" in
+      x86_64 | amd64) FILE="atlassian-cli-x86_64-unknown-linux-gnu.tar.gz" ;;
+      *) echo "暂不支持的架构: $ARCH"; exit 1 ;;
+    esac
+    ;;
+  *)
+    echo "暂不支持的操作系统: $OS"
+    exit 1
+    ;;
 esac
-FILE="atlassian-cli-${OS}-${ARCH}"
 
 echo "检测到系统环境: ${OS}-${ARCH}, 安装路径: ${INSTALL_DIR}"
 
@@ -94,12 +108,18 @@ if [ "$VER" = "latest" ]; then
 fi
 
 echo "🌐 正在从 GitHub Release 下载 ${FILE} ..."
-TMP="$(mktemp)"
-if curl -fsSL "$RELEASE_URL" -o "$TMP"; then
-  install_file "$TMP"
-  rm -f "$TMP"
+TMP_DIR="$(mktemp -d)"
+if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/${FILE}"; then
+  if [[ "$FILE" == *.tar.gz ]]; then
+    tar -xzf "${TMP_DIR}/${FILE}" -C "$TMP_DIR"
+    install_file "${TMP_DIR}/atlassian-cli"
+  else
+    install_file "${TMP_DIR}/${FILE}"
+  fi
+  rm -rf "$TMP_DIR"
   exit 0
 fi
-rm -f "$TMP"
-echo "❌ 下载失败: 请检查网络或在本地运行: cargo build --release"
+
+rm -rf "$TMP_DIR"
+echo "❌ 下载失败: 请检查网络或确认 Release 资产是否存在: ${RELEASE_URL}"
 exit 1
