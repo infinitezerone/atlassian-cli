@@ -70,6 +70,15 @@ atlassian-cli jira user "John"
 atlassian-cli jira assign PROJ-123 john.doe
 ```
 
+### Worklog & Time Tracking
+```bash
+# Log time spent on an issue (supports "2h 30m", "1d", "45m", --comment, --started)
+atlassian-cli jira worklog-add PROJ-123 "2h 30m" --comment "Completed code review and unit tests"
+
+# List worklog entries on an issue
+atlassian-cli jira worklog-list PROJ-123
+```
+
 ---
 
 ## 3. Confluence Workflow Commands

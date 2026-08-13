@@ -40,6 +40,8 @@ impl AtlassianModule for Jira {
             JiraActions::AssignableUsers { key, query, limit } => {
                 self.search_assignable_users(&key, query.as_deref(), limit).await
             }
+            JiraActions::WorklogAdd(a) => self.add_worklog(&a).await,
+            JiraActions::WorklogList(a) => self.list_worklogs(&a).await,
         }
     }
 }
