@@ -76,6 +76,7 @@ install_file() {
   echo ""
   echo "🎉 准备就绪！请运行 'exec \$SHELL' 刷新终端 (或打开新终端窗口)"
   echo "👉 运行 'atlassian-cli login' 完成首次接入配置"
+  echo "🤖 运行 'atlassian-cli skill install' 一键部署官方 AI Agent Skill"
 }
 
 # 1) 本地产物优先

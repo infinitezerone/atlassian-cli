@@ -4,6 +4,7 @@ mod confluence;
 mod http;
 mod jira;
 mod module;
+mod skill;
 mod utils;
 
 use std::process::exit;
@@ -67,6 +68,19 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigActions,
     },
+    /// 自动管理官方 AI Agent Skill 规约 (一键安装 install / 查看状态 status)
+    Skill {
+        #[command(subcommand)]
+        action: Option<SkillSubActions>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillSubActions {
+    /// 自动安装/更新官方 Agent Skill 到全局配置目录 (~/.gemini/config/skills/atlassian-cli/SKILL.md)
+    Install,
+    /// 检查 Agent Skill 的部署状态与文件路径
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -183,6 +197,12 @@ async fn main() {
             })
             .await;
             r
+        }
+        Commands::Skill { action } => {
+            match action.unwrap_or(SkillSubActions::Install) {
+                SkillSubActions::Install => skill::install_skill(),
+                SkillSubActions::Status => skill::skill_status(),
+            }
         }
     };
 

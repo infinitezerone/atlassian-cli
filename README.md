@@ -33,8 +33,9 @@ cd atlassian-cli && cargo build --release
 ### 2. Initial Setup
 
 ```bash
-atlassian-cli login   # Interactive setup for Base URL & PATs with auto-connectivity check
-atlassian-cli status  # Inspect connection status & authenticated user identity
+atlassian-cli login          # Interactive setup for Base URL & PATs with auto-connectivity check
+atlassian-cli skill install  # Auto-deploy embedded official AI Agent Skill to ~/.gemini/config/skills/
+atlassian-cli status         # Inspect connection status & authenticated user identity
 ```
 *Environment variables are also supported: `JIRA_URL` / `JIRA_TOKEN`, `CONFLUENCE_URL` / `CONFLUENCE_TOKEN`, `BITBUCKET_URL` / `BITBUCKET_TOKEN`.*
 
