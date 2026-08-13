@@ -75,3 +75,36 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew-tap:
+    name: Update Homebrew Tap Formula
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Homebrew Tap
+        uses: actions/checkout@v4
+        with:
+          repository: infinitezerone/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download macOS Release Asset & Update Formula
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG_NAME#v}"
+          URL="https://github.com/infinitezerone/atlassian-cli/releases/download/${TAG_NAME}/atlassian-cli-aarch64-apple-darwin.tar.gz"
+          
+          curl -fsSL "$URL" -o mac.tar.gz
+          SHA256=$(sha256sum mac.tar.gz | awk '{print $1}')
+          echo "Version: ${VERSION}, SHA256: ${SHA256}"
+
+          cd homebrew-tap
+          FORMULA="Formula/atlassian-cli.rb"
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" "$FORMULA"
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" "$FORMULA"
+
+          git config user.name "Infinite Zerone"
+          git config user.email "infinitezerone@users.noreply.github.com"
+          git add "$FORMULA"
+          git commit -m "chore: auto-update formula for ${TAG_NAME}" || exit 0
+          git push
