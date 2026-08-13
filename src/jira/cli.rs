@@ -1,6 +1,21 @@
 use clap::{Args, Subcommand};
 
 #[derive(Args)]
+pub struct GetIssueArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key: String,
+    /// 最多包含的最新评论条数 (默认 10，设为 0 可不返回评论)
+    #[arg(long, default_value_t = 10)]
+    pub comments_limit: u32,
+    /// 返回原始未经裁剪的全量 Jira API JSON 响应 (包含所有自定义字段与 timetracking)
+    #[arg(long, short = 'r')]
+    pub raw: bool,
+    /// 自定义额外输出的字段列表 (英文逗号分隔，如 "timetracking,worklog,components,customfield_10001")
+    #[arg(long, short = 'f')]
+    pub fields: Option<String>,
+}
+
+#[derive(Args)]
 pub struct CreateIssueArgs {
     /// Jira 项目 Key (如 PROJ 或 PROJSA)
     #[arg(long)]
@@ -49,13 +64,8 @@ pub struct UpdateIssueArgs {
 /// Jira 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum JiraActions {
-    /// 查询单子详情 (支持 Key 或网页 URL，包含最新评论)
-    Get {
-        key: String,
-        /// 最多包含的最新评论条数 (默认 10，设为 0 可不返回评论)
-        #[arg(long, default_value_t = 10)]
-        comments_limit: u32,
-    },
+    /// 查询单子详情 (支持 Key 或网页 URL，支持 --raw 原始全量输出与 --fields 指定字段)
+    Get(GetIssueArgs),
     /// 在单子里加评论
     Comment { key: String, text: String },
     /// 流转单子状态 (按状态名,如 In Progress / Done)

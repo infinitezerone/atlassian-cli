@@ -1,7 +1,10 @@
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
-use super::cli::{AddWorklogArgs, CreateIssueArgs, DeleteWorklogArgs, ListWorklogsArgs, UpdateIssueArgs};
+use super::cli::{
+    AddWorklogArgs, CreateIssueArgs, DeleteWorklogArgs, GetIssueArgs, ListWorklogsArgs,
+    UpdateIssueArgs,
+};
 use crate::http::HttpClient;
 use crate::utils::{parse_jira_key, parse_username};
 
@@ -15,14 +18,18 @@ impl Jira {
         Self { http }
     }
 
-    /// GET /rest/api/2/issue/{key} -> 裁剪字段 (支持直接传入 Issue Key 或完整网页 URL)
-    pub async fn get_issue(&self, key_or_url: &str, comments_limit: u32) -> Result<Value> {
-        let key = parse_jira_key(key_or_url);
+    /// GET /rest/api/2/issue/{key} -> 支持 --raw 原始全量输出与 --fields 自定义字段挑选
+    pub async fn get_issue(&self, a: &GetIssueArgs) -> Result<Value> {
+        let key = parse_jira_key(&a.key);
         let enc_key = urlencoding::encode(&key);
         let raw = self
             .http
             .get(&format!("/rest/api/2/issue/{}", enc_key))
             .await?;
+
+        if a.raw {
+            return Ok(raw);
+        }
 
         let assignee_val = if !raw["fields"]["assignee"].is_null() {
             let uname = raw["fields"]["assignee"]["name"].as_str().unwrap_or("");
@@ -55,11 +62,11 @@ impl Jira {
 
         let total_comments = all_comments.len();
 
-        let comments_vec: Vec<Value> = if comments_limit > 0 {
+        let comments_vec: Vec<Value> = if a.comments_limit > 0 {
             all_comments
                 .iter()
                 .rev()
-                .take(comments_limit as usize)
+                .take(a.comments_limit as usize)
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
@@ -82,7 +89,7 @@ impl Jira {
             Vec::new()
         };
 
-        Ok(json!({
+        let mut res = json!({
             "key": raw["key"],
             "summary": raw["fields"]["summary"],
             "status": raw["fields"]["status"]["name"],
@@ -91,11 +98,25 @@ impl Jira {
             "reporter": reporter_val,
             "priority": raw["fields"]["priority"]["name"],
             "labels": raw["fields"]["labels"],
+            "timetracking": raw["fields"]["timetracking"],
             "description": raw["fields"]["description"],
             "comments_count": total_comments,
             "comments": comments_vec,
             "link": format!("{}/browse/{}", self.http.base_url(), raw["key"].as_str().unwrap_or(&key)),
-        }))
+        });
+
+        if let Some(ref extra_fields_str) = a.fields {
+            if let Some(obj) = res.as_object_mut() {
+                for f in extra_fields_str.split(',') {
+                    let clean_field = f.trim();
+                    if !clean_field.is_empty() && !obj.contains_key(clean_field) {
+                        obj.insert(clean_field.to_string(), raw["fields"][clean_field].clone());
+                    }
+                }
+            }
+        }
+
+        Ok(res)
     }
 
     /// POST /rest/api/2/issue/{key}/comment (支持直接传入 Issue Key 或网页 URL)

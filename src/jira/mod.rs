@@ -29,7 +29,7 @@ impl AtlassianModule for Jira {
 
     async fn handle(&self, action: JiraActions) -> Result<Value> {
         match action {
-            JiraActions::Get { key, comments_limit } => self.get_issue(&key, comments_limit).await,
+            JiraActions::Get(a) => self.get_issue(&a).await,
             JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,
             JiraActions::Transition { key, status } => self.transition(&key, &status).await,
             JiraActions::Search { jql, limit } => self.search_issues(&jql, limit).await,
