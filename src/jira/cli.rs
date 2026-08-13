@@ -96,4 +96,28 @@ pub enum JiraActions {
         #[arg(long, default_value_t = 10)]
         limit: u32,
     },
+    /// 在单子上登记工作日志与工时 (支持 "2h 30m" / "1d" / "45m", --comment, --started)
+    WorklogAdd(AddWorklogArgs),
+    /// 查看单子上的历史工作日志与工时登记列表
+    WorklogList(ListWorklogsArgs),
+}
+
+#[derive(Args)]
+pub struct AddWorklogArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key_or_url: String,
+    /// 消耗工时时间 (支持 "2h 30m" / "1d" / "45m" 等标准格式)
+    pub time_spent: String,
+    /// 工时日志备注说明 (可选)
+    #[arg(long, short = 'm')]
+    pub comment: Option<String>,
+    /// 开始时间 (可选，格式 "YYYY-MM-DD" 或 "YYYY-MM-DDTHH:MM:SS"，不传默认为当前时间)
+    #[arg(long)]
+    pub started: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ListWorklogsArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key_or_url: String,
 }
