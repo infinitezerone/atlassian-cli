@@ -48,18 +48,30 @@ pub struct CommentPrArgs {
 
 #[derive(Args)]
 pub struct CreatePrArgs {
+    /// Bitbucket Project 名 (例如 PROJ)
     #[arg(long)]
     pub project: String,
+    /// Bitbucket Repo 名 (例如 my-repo)
     #[arg(long)]
     pub repo: String,
+    /// PR 标题/概要 (Summary)
     #[arg(long)]
     pub title: String,
-    #[arg(long)]
+    /// PR 详细描述 (Description)
+    #[arg(long, default_value = "")]
     pub description: String,
+    /// 源分支名 (如 feature/add-login)
     #[arg(long)]
     pub from: String,
+    /// 目标分支名 (如 main 或 release/6.2.0)
     #[arg(long)]
     pub to: String,
+    /// 手动指定的额外 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @{john.doe})
+    #[arg(long)]
+    pub reviewers: Option<String>,
+    /// 不自动加载 Bitbucket 网页端预设的 Default Reviewers (默认 false，即自动包含预设)
+    #[arg(long, default_value_t = false)]
+    pub no_default_reviewers: bool,
 }
 
 #[derive(Args)]

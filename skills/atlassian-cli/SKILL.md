@@ -99,6 +99,9 @@ atlassian-cli confluence get 12345678 --raw
 ```bash
 # List OPEN PRs in a repository (supports repo webpage URL)
 atlassian-cli bitbucket list-prs --url "https://gitpub.example.com/projects/PROJ/repos/my-repo" --state OPEN
+
+# Create Pull Request (auto-loads web default reviewers, supports extra --reviewers)
+atlassian-cli bitbucket create-pr --project PROJ --repo my-repo --title "Fix login timeout" --from feature/login-fix --to main --reviewers "john.doe, jane.smith"
 ```
 
 ### Inspect PR Details & Code Diffs

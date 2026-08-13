@@ -15,21 +15,81 @@ impl Bitbucket {
         Self { http }
     }
 
-    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests (支持自动加载网页预设 Reviewer 与手动扩展)
     pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value> {
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
             urlencoding::encode(&a.project),
             urlencoding::encode(&a.repo)
         );
+
+        let mut reviewer_names: Vec<String> = Vec::new();
+
+        // 1. 自动尝试从网页端的 default-reviewers conditions 获取预设 Reviewer
+        if !a.no_default_reviewers {
+            let cond_path = format!(
+                "/rest/default-reviewers/1.0/projects/{}/repos/{}/conditions",
+                urlencoding::encode(&a.project),
+                urlencoding::encode(&a.repo)
+            );
+            if let Ok(cond_raw) = self.http.get(&cond_path).await {
+                if let Some(arr) = cond_raw.as_array() {
+                    for cond in arr {
+                        if let Some(revs) = cond["reviewers"].as_array() {
+                            for r in revs {
+                                if let Some(uname) = r["name"].as_str() {
+                                    if !uname.is_empty() && !reviewer_names.contains(&uname.to_string()) {
+                                        reviewer_names.push(uname.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 追加用户通过 --reviewers 手动传入的评审人
+        if let Some(ref rev_str) = a.reviewers {
+            for item in rev_str.split(',') {
+                let clean = crate::utils::parse_username(item);
+                if !clean.is_empty() && !reviewer_names.contains(&clean) {
+                    reviewer_names.push(clean);
+                }
+            }
+        }
+
+        let reviewers_payload: Vec<Value> = reviewer_names
+            .iter()
+            .map(|name| json!({ "user": { "name": name } }))
+            .collect();
+
         let body = json!({
             "title": a.title,
             "description": a.description,
             "fromRef": { "id": format!("refs/heads/{}", a.from) },
             "toRef": { "id": format!("refs/heads/{}", a.to) },
-            "reviewers": []
+            "reviewers": reviewers_payload,
         });
+
         let raw = self.http.post(&path, body).await?;
+        let res_reviewers = raw["reviewers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| {
+                        let uname = r["user"]["name"].as_str().unwrap_or("");
+                        let dname = r["user"]["displayName"].as_str().unwrap_or("");
+                        json!({
+                            "username": uname,
+                            "displayName": dname,
+                            "mention_syntax": format!("@{{{}}}", uname),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
         Ok(json!({
             "status": "success",
             "pr_id": raw["id"],
@@ -37,6 +97,8 @@ impl Bitbucket {
             "state": raw["state"],
             "from": raw["fromRef"]["displayId"],
             "to": raw["toRef"]["displayId"],
+            "reviewers_count": res_reviewers.len(),
+            "reviewers": res_reviewers,
             "link": raw["links"]["self"][0]["href"],
         }))
     }

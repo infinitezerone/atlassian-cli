@@ -65,7 +65,7 @@ atlassian-cli status  # Inspect connection status & authenticated user identity
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
 | | `bitbucket comment-pr <URL/ID> --text "..."` | Post a comment on PR (supports `--file <PATH>` & `--line <NUM>` for inline comments) |
-| | `bitbucket create-pr ...` | Create a Pull Request |
+| | `bitbucket create-pr ...` | Create PR (auto-loads web default reviewers, supports `--reviewers` & `--no-default-reviewers`) |
 | **Config** | `config set <module>` | Masked interactive Token configuration (`--stdin` for pipe input) |
 | | `config set-url <module> <URL>` | Update Base URL for a module |
 | | `config test` / `config status` | Verify connectivity & Token permissions |
