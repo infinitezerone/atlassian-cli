@@ -19,9 +19,9 @@ brew trust infinitezerone/tap
 brew install infinitezerone/tap/atlassian-cli
 ```
 
-**One-line Shell Script**
+**One-line Shell Script (CDN Accelerated)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/infinitezerone/atlassian-cli/main/install.sh | sh
+curl -fsSL https://cdn.jsdelivr.net/gh/infinitezerone/atlassian-cli@main/install.sh | sh
 ```
 
 **Build from Source**
