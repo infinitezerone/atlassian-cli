@@ -247,9 +247,9 @@ impl Confluence {
     }
 }
 
-/// 极简 HTML -> 纯文本:Confluence storage 格式正文转给 AI 阅读
+/// 极简 HTML -> 纯文本: 预处理 Confluence 各种 XML 宏 (日期宏 <time>, 人员提及 <ri:user>, 状态宏等)
 fn html_to_text(html: &str) -> String {
-    let mut s = html.to_string();
+    let mut s = preprocess_confluence_macros(html);
     for tag in [
         "</p>", "</div>", "</li>", "</tr>", "</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>",
         "</pre>", "<br", "</table>", "</ul>", "</ol>",
@@ -282,6 +282,85 @@ fn html_to_text(html: &str) -> String {
     lines.join("\n")
 }
 
+fn preprocess_confluence_macros(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+
+    while i < html.len() {
+        // 1. 识别 <time ...datetime="2026-08-13"...> 日期宏 -> [Date: 2026-08-13]
+        if html[i..].starts_with("<time") || html[i..].starts_with("<TIME") {
+            if let Some(end_tag) = html[i..].find('>') {
+                let tag_str = &html[i..i + end_tag + 1];
+                if let Some(dt) = extract_xml_attr(tag_str, "datetime") {
+                    out.push_str(&format!(" [Date: {}] ", dt));
+                    i += end_tag + 1;
+                    if html[i..].starts_with("</time>") || html[i..].starts_with("</TIME>") {
+                        i += 7;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        // 2. 识别 <ri:user ...ri:username="john.doe"...> 人员提到宏 -> [~john.doe]
+        if html[i..].starts_with("<ri:user") || html[i..].starts_with("<RI:USER") {
+            if let Some(end_tag) = html[i..].find('>') {
+                let tag_str = &html[i..i + end_tag + 1];
+                if let Some(uname) = extract_xml_attr(tag_str, "ri:username") {
+                    out.push_str(&format!(" [~{}] ", uname));
+                    i += end_tag + 1;
+                    if html[i..].starts_with("</ri:user>") || html[i..].starts_with("</RI:USER>") {
+                        i += 10;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        // 3. 识别状态宏 <ac:parameter ac:name="title">STATUS</ac:parameter> -> [Status: STATUS]
+        if html[i..].starts_with("<ac:parameter ac:name=\"title\">")
+            || html[i..].starts_with("<ac:parameter ac:name='title'>")
+        {
+            let prefix_len = if html[i..].starts_with("<ac:parameter ac:name=\"title\">") {
+                "<ac:parameter ac:name=\"title\">".len()
+            } else {
+                "<ac:parameter ac:name='title'>".len()
+            };
+            if let Some(end_param) = html[i + prefix_len..].find("</ac:parameter>") {
+                let title = &html[i + prefix_len..i + prefix_len + end_param];
+                out.push_str(&format!(" [Status: {}] ", title.trim()));
+                i += prefix_len + end_param + "</ac:parameter>".len();
+                continue;
+            }
+        }
+
+        // 4. 普通字符原样写入
+        let c = html[i..].chars().next().unwrap();
+        out.push(c);
+        i += c.len_utf8();
+    }
+
+    out
+}
+
+fn extract_xml_attr<'a>(tag: &'a str, attr_name: &str) -> Option<&'a str> {
+    let pattern = format!("{}=\"", attr_name);
+    if let Some(pos) = tag.find(&pattern) {
+        let val_start = pos + pattern.len();
+        if let Some(val_end) = tag[val_start..].find('"') {
+            return Some(&tag[val_start..val_start + val_end]);
+        }
+    }
+    let pattern_single = format!("{}='", attr_name);
+    if let Some(pos) = tag.find(&pattern_single) {
+        let val_start = pos + pattern_single.len();
+        if let Some(val_end) = tag[val_start..].find('\'') {
+            return Some(&tag[val_start..val_start + val_end]);
+        }
+    }
+    None
+}
+
 /// 自动将纯文本/Markdown/HTML 转为 Confluence Storage 格式
 fn format_to_storage_html(text: &str) -> String {
     let trimmed = text.trim();
@@ -307,5 +386,17 @@ mod tests {
 
         let date_macro = "<time datetime=\"2026-08-13\"/>";
         assert_eq!(format_to_storage_html(date_macro), date_macro);
+    }
+
+    #[test]
+    fn test_html_to_text_with_confluence_macros() {
+        let html = r#"<p>Release Date: <time datetime="2026-08-15"/></p>
+<p>Assignee: <ac:link><ri:user ri:username="john.doe"/></ac:link></p>
+<p>Status: <ac:structured-macro ac:name="status"><ac:parameter ac:name="title">IN PROGRESS</ac:parameter></ac:structured-macro></p>"#;
+
+        let plain = html_to_text(html);
+        assert!(plain.contains("[Date: 2026-08-15]"));
+        assert!(plain.contains("[~john.doe]"));
+        assert!(plain.contains("[Status: IN PROGRESS]"));
     }
 }
