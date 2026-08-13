@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
-use super::cli::{AddWorklogArgs, CreateIssueArgs, ListWorklogsArgs, UpdateIssueArgs};
+use super::cli::{AddWorklogArgs, CreateIssueArgs, DeleteWorklogArgs, ListWorklogsArgs, UpdateIssueArgs};
 use crate::http::HttpClient;
 use crate::utils::{parse_jira_key, parse_username};
 
@@ -460,6 +460,26 @@ impl Jira {
             "issue_key": key,
             "total_count": worklogs.len(),
             "worklogs": worklogs,
+        }))
+    }
+
+    /// DELETE /rest/api/2/issue/{key}/worklog/{id} (删除指定工时记录)
+    pub async fn delete_worklog(&self, a: &DeleteWorklogArgs) -> Result<Value> {
+        let key = parse_jira_key(&a.key_or_url);
+        let path = format!(
+            "/rest/api/2/issue/{}/worklog/{}",
+            urlencoding::encode(&key),
+            urlencoding::encode(a.worklog_id.trim())
+        );
+
+        self.http.delete(&path).await?;
+
+        Ok(json!({
+            "status": "success",
+            "issue_key": key,
+            "worklog_id": a.worklog_id.trim(),
+            "deleted": true,
+            "url": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
 }

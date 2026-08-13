@@ -77,6 +77,9 @@ atlassian-cli jira worklog-add PROJ-123 "2h 30m" --comment "Completed code revie
 
 # List worklog entries on an issue
 atlassian-cli jira worklog-list PROJ-123
+
+# Delete a specific worklog entry
+atlassian-cli jira worklog-delete PROJ-123 7858155
 ```
 
 ---

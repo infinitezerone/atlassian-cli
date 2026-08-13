@@ -100,6 +100,8 @@ pub enum JiraActions {
     WorklogAdd(AddWorklogArgs),
     /// 查看单子上的历史工作日志与工时登记列表
     WorklogList(ListWorklogsArgs),
+    /// 删除单子上的指定工作日志工时记录 (支持 Key 或网页 URL + Worklog ID)
+    WorklogDelete(DeleteWorklogArgs),
 }
 
 #[derive(Args)]
@@ -120,4 +122,12 @@ pub struct AddWorklogArgs {
 pub struct ListWorklogsArgs {
     /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
     pub key_or_url: String,
+}
+
+#[derive(Args)]
+pub struct DeleteWorklogArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key_or_url: String,
+    /// 要删除的 Worklog ID (可先通过 worklog-list 获取)
+    pub worklog_id: String,
 }

@@ -90,6 +90,13 @@ impl HttpClient {
         Self::parse(res).await
     }
 
+    /// 发起 DELETE 请求
+    pub async fn delete(&self, path: &str) -> Result<Value> {
+        let url = self.url(path);
+        let res = self.client.delete(&url).send().await?;
+        Self::parse(res).await
+    }
+
     /// 构建带 Query 参数的安全 URL (键值自动 urlencoding)
     pub fn build_url_with_query(&self, path: &str, query: &[(&str, &str)]) -> String {
         let base = self.url(path);

@@ -42,6 +42,7 @@ impl AtlassianModule for Jira {
             }
             JiraActions::WorklogAdd(a) => self.add_worklog(&a).await,
             JiraActions::WorklogList(a) => self.list_worklogs(&a).await,
+            JiraActions::WorklogDelete(a) => self.delete_worklog(&a).await,
         }
     }
 }
