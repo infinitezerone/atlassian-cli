@@ -90,8 +90,8 @@ pub fn load() -> Result<Config> {
     Ok(cfg)
 }
 
-/// 智能 URL 归一化: 自动去除前后空格、补全 https:// 前缀、删除末尾斜杠
-pub fn normalize_url(input: &str) -> String {
+/// 智能 URL 归一化: 自动去除前后空格、补全 https:// 前缀、删除末尾斜杠、智能裁剪网页路径 (如 /browse/..., /pages/..., /projects/...)
+pub fn normalize_module_url(input: &str, module: &str) -> String {
     let mut trimmed = input.trim().to_string();
     if trimmed.is_empty() {
         return String::new();
@@ -99,10 +99,38 @@ pub fn normalize_url(input: &str) -> String {
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
         trimmed = format!("https://{}", trimmed);
     }
+    if let Some(pos) = trimmed.find('?') {
+        trimmed.truncate(pos);
+    }
+    if let Some(pos) = trimmed.find('#') {
+        trimmed.truncate(pos);
+    }
+    while trimmed.ends_with('/') {
+        trimmed.pop();
+    }
+
+    let markers: &[&str] = match module.to_lowercase().as_str() {
+        "jira" => &["/browse/", "/secure/", "/projects/", "/issues/", "/rest/api/"],
+        "confluence" => &["/pages/", "/display/", "/spaces/", "/rest/api/"],
+        "bitbucket" => &["/projects/", "/users/", "/scm/", "/plugins/servlet/", "/rest/api/"],
+        _ => &["/browse/", "/pages/", "/display/", "/projects/"],
+    };
+
+    for marker in markers {
+        if let Some(pos) = trimmed.find(marker) {
+            trimmed.truncate(pos);
+            break;
+        }
+    }
+
     while trimmed.ends_with('/') {
         trimmed.pop();
     }
     trimmed
+}
+
+pub fn normalize_url(input: &str) -> String {
+    normalize_module_url(input, "")
 }
 
 /// 保存配置并强制收紧权限:目录 700、文件 600(仅当前用户可读写)
@@ -124,7 +152,70 @@ pub fn save(cfg: &Config) -> Result<()> {
 }
 
 /// 针对单个模块实时探测凭据有效性并返回可读用户名
+#[allow(dead_code)]
 pub async fn probe_module_credential(
+    module: &str,
+    url: &str,
+    token: &str,
+    allow_insecure: bool,
+) -> Result<String> {
+    let (user, _) = probe_module_credential_with_healing(module, url, token, allow_insecure).await?;
+    Ok(user)
+}
+
+/// 探测凭据有效性，并在失败时自动尝试私有部署常见子路径 (如 /jira, /confluence, /wiki, /bitbucket)
+pub async fn probe_module_credential_with_healing(
+    module: &str,
+    url: &str,
+    token: &str,
+    allow_insecure: bool,
+) -> Result<(String, Option<String>)> {
+    match probe_single_url(module, url, token, allow_insecure).await {
+        Ok(user) => Ok((user, None)),
+        Err(orig_err) => {
+            let candidates: Vec<String> = match module {
+                "jira" => {
+                    if !url.ends_with("/jira") {
+                        vec![format!("{}/jira", url)]
+                    } else {
+                        vec![]
+                    }
+                }
+                "confluence" => {
+                    let mut list = Vec::new();
+                    if !url.ends_with("/confluence") {
+                        list.push(format!("{}/confluence", url));
+                    }
+                    if !url.ends_with("/wiki") {
+                        list.push(format!("{}/wiki", url));
+                    }
+                    list
+                }
+                "bitbucket" => {
+                    let mut list = Vec::new();
+                    if !url.ends_with("/bitbucket") {
+                        list.push(format!("{}/bitbucket", url));
+                    }
+                    if !url.ends_with("/stash") {
+                        list.push(format!("{}/stash", url));
+                    }
+                    list
+                }
+                _ => vec![],
+            };
+
+            for candidate in candidates {
+                if let Ok(user) = probe_single_url(module, &candidate, token, allow_insecure).await {
+                    return Ok((user, Some(candidate)));
+                }
+            }
+
+            Err(orig_err)
+        }
+    }
+}
+
+async fn probe_single_url(
     module: &str,
     url: &str,
     token: &str,
@@ -190,6 +281,13 @@ pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
 
     for module in target_modules {
         println!(">>> 配置 {} 模块", module.to_uppercase());
+        println!("  💡 提示: 直接从浏览器地址栏复制任意 {} 页面网址粘贴即可 (CLI 会自动智能清洗提取 Base URL)", module);
+        let example = match module {
+            "jira" => "https://jira.company.com 或 https://company.com/jira/browse/PROJ-123",
+            "confluence" => "https://confluence.company.com 或 https://company.com/confluence/pages/viewpage.action?pageId=123",
+            _ => "https://bitbucket.company.com 或 https://company.com/bitbucket/projects/PROJ/repos/repo",
+        };
+        println!("  示例: {}", example);
 
         // 1. Base URL 配置
         let cur_url = match module {
@@ -199,16 +297,16 @@ pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
         };
 
         let prompt_url = if cur_url.is_empty() {
-            format!("Enter {} Base URL (例如 https://{}.company.com, 留空跳过)", module, module)
+            format!("Enter {} Base URL (留空跳过)", module)
         } else {
             format!("Enter {} Base URL (已配置: {}, 留空保留)", module, cur_url)
         };
 
         let raw_url = input_line(&prompt_url)?;
-        let url = if raw_url.is_empty() {
+        let mut url = if raw_url.is_empty() {
             cur_url.clone()
         } else {
-            normalize_url(&raw_url)
+            normalize_module_url(&raw_url, module)
         };
 
         if url.is_empty() {
@@ -251,13 +349,28 @@ pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
             print!("  正在实时测试 {} 凭据 ({}) ... ", module, url);
             std::io::stdout().flush().ok();
 
-            match probe_module_credential(module, &url, &token, cfg.allow_insecure_certs).await {
-                Ok(user_name) => {
-                    println!("SUCCESS (已认证: {})", user_name);
+            match probe_module_credential_with_healing(module, &url, &token, cfg.allow_insecure_certs).await {
+                Ok((user_name, healed_url_opt)) => {
+                    if let Some(healed_url) = healed_url_opt {
+                        println!("SUCCESS (已认证: {})", user_name);
+                        println!("  💡 智能自愈: 检测到您的私有部署使用了子路径，已自动更正 Base URL 为: {}", healed_url);
+                        url = healed_url;
+                    } else {
+                        println!("SUCCESS (已认证: {})", user_name);
+                    }
                     match module {
-                        "jira" => cfg.jira_token = token.clone(),
-                        "confluence" => cfg.confluence_token = token.clone(),
-                        _ => cfg.bitbucket_token = token.clone(),
+                        "jira" => {
+                            cfg.jira_url = url.clone();
+                            cfg.jira_token = token.clone();
+                        }
+                        "confluence" => {
+                            cfg.confluence_url = url.clone();
+                            cfg.confluence_token = token.clone();
+                        }
+                        _ => {
+                            cfg.bitbucket_url = url.clone();
+                            cfg.bitbucket_token = token.clone();
+                        }
                     }
                     break;
                 }
@@ -465,6 +578,43 @@ mod tests {
         assert_eq!(normalize_url("  jira.example.com/  "), "https://jira.example.com");
         assert_eq!(normalize_url("http://jira.example.com/jira/"), "http://jira.example.com/jira");
         assert_eq!(normalize_url("https://gitpub.company.com"), "https://gitpub.company.com");
+    }
+
+    #[test]
+    fn test_normalize_module_url_smart_strip() {
+        // Jira 单子 URL
+        assert_eq!(
+            normalize_module_url("https://jira.company.com/browse/PROJ-123", "jira"),
+            "https://jira.company.com"
+        );
+        assert_eq!(
+            normalize_module_url("https://company.com/jira/browse/PROJSA-123?filter=1", "jira"),
+            "https://company.com/jira"
+        );
+        assert_eq!(
+            normalize_module_url("https://jira.company.com/secure/Dashboard.jspa", "jira"),
+            "https://jira.company.com"
+        );
+
+        // Confluence 页面 URL
+        assert_eq!(
+            normalize_module_url("https://confluence.company.com/pages/viewpage.action?pageId=123", "confluence"),
+            "https://confluence.company.com"
+        );
+        assert_eq!(
+            normalize_module_url("https://company.com/confluence/display/SPACE/Title", "confluence"),
+            "https://company.com/confluence"
+        );
+
+        // Bitbucket PR 与仓库 URL
+        assert_eq!(
+            normalize_module_url("https://bitbucket.company.com/projects/PROJ/repos/repo/pull-requests/1", "bitbucket"),
+            "https://bitbucket.company.com"
+        );
+        assert_eq!(
+            normalize_module_url("https://company.com/bitbucket/projects/PROJ/repos/repo", "bitbucket"),
+            "https://company.com/bitbucket"
+        );
     }
 }
 
