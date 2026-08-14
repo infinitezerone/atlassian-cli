@@ -33,10 +33,11 @@ cd atlassian-cli && cargo build --release
 ### 2. Initial Setup
 
 ```bash
-atlassian-cli login          # Interactive setup for Base URL & PATs with auto-connectivity check
+atlassian-cli login          # Interactive setup with auto-connectivity check (paste ANY webpage URL from browser!)
 atlassian-cli skill install  # Auto-deploy embedded official AI Agent Skill to ~/.gemini/config/skills/
 atlassian-cli status         # Inspect connection status & authenticated user identity
 ```
+*💡 **Tip**: When configuring Base URL, you can just paste ANY webpage URL from your browser (e.g. `https://jira.company.com/browse/PROJ-123`). The CLI will automatically extract the clean Base URL and probe subpaths!*
 *Environment variables are also supported: `JIRA_URL` / `JIRA_TOKEN`, `CONFLUENCE_URL` / `CONFLUENCE_TOKEN`, `BITBUCKET_URL` / `BITBUCKET_TOKEN`.*
 
 ---
