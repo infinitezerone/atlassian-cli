@@ -80,12 +80,13 @@ jobs:
     name: Update Homebrew Tap Formula
     needs: create-release
     runs-on: ubuntu-latest
+    if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
     steps:
       - name: Checkout Homebrew Tap
         uses: actions/checkout@v4
         with:
           repository: infinitezerone/homebrew-tap
-          token: ${{ secrets.TAP_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
           path: homebrew-tap
 
       - name: Download macOS Release Asset & Update Formula
