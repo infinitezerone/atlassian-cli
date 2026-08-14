@@ -29,13 +29,20 @@ impl AtlassianModule for Confluence {
 
     async fn handle(&self, action: ConfluenceActions) -> Result<Value> {
         match action {
-            ConfluenceActions::Search { query, limit } => self.search(&query, limit).await,
+            ConfluenceActions::Search {
+                query,
+                limit,
+                title_only,
+                space,
+            } => self.search(&query, limit, title_only, space.as_deref()).await,
             ConfluenceActions::Get {
                 id,
+                title_only,
                 raw,
                 max_chars,
                 offset,
-            } => self.get_page(&id, raw, max_chars, offset).await,
+            } => self.get_page(&id, title_only, raw, max_chars, offset).await,
+            ConfluenceActions::Children { id, limit } => self.get_children(&id, limit).await,
             ConfluenceActions::Create(a) => self.create_page(&a).await,
             ConfluenceActions::Update(a) => self.update_page(&a).await,
         }

@@ -88,7 +88,20 @@ atlassian-cli jira worklog-delete PROJ-123 7858155
 
 ### Search Documentation (CQL)
 ```bash
+# Full-text search
 atlassian-cli confluence search "Architecture Design" --limit 5
+
+# Title-only exact search (lightweight, zero false positives)
+atlassian-cli confluence search "Release Plan" --title-only --space PROJ
+```
+
+### Inspect Page & Child Tree (Lightweight / 0-body)
+```bash
+# Quick title & metadata check (0 body fetched, saves tokens)
+atlassian-cli confluence get 12345678 --title-only
+
+# List direct child pages under a parent topic (returns IDs & titles)
+atlassian-cli confluence children 12345678 --limit 20
 ```
 
 ### Fetch Page Body

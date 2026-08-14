@@ -62,8 +62,9 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira worklog-add <KEY/URL> <TIME> [--comment C]` | Log time spent on an issue (supports `"2h 30m"`, `"1d"`, `"45m"`, `--comment`, `--started`) |
 | | `jira worklog-list <KEY/URL>` | List all logged worklog entries & time spent on an issue |
 | | `jira worklog-delete <KEY/URL> <WORKLOG_ID>` | Delete a specific worklog entry from an issue |
-| **Confluence** | `confluence search <Q>` | Full-text search pages |
-| | `confluence get <ID/URL> [--raw]` | Fetch page body (plain-text by default; supports `--max-chars` & `--offset`) |
+| **Confluence** | `confluence search <Q> [-t] [-s S]` | Search pages (full-text by default; `-t` for title-only search, `-s` for space filter) |
+| | `confluence get <ID/URL> [-t] [--raw]` | Fetch page body (plain-text by default; `-t` for title/meta only, `--max-chars` & `--offset`) |
+| | `confluence children <ID/URL>` | List direct child pages with titles, IDs & versions (0-body lightweight inspection) |
 | | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
 | | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
 | **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |

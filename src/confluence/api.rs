@@ -15,15 +15,37 @@ impl Confluence {
         Self { http }
     }
 
-    /// GET /rest/api/content/search?cql=siteSearch~"q"
-    pub async fn search(&self, query: &str, limit: u32) -> Result<Value> {
-        let cql = format!("siteSearch~\"{}\"", query);
+    /// GET /rest/api/content/search?cql=... (支持全文检索或仅按标题精准搜索 --title-only，以及按空间 space 过滤)
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: u32,
+        title_only: bool,
+        space: Option<&str>,
+    ) -> Result<Value> {
+        let mut cql = if title_only {
+            format!("title ~ \"{}\"", query)
+        } else {
+            format!("siteSearch ~ \"{}\"", query)
+        };
+
+        if let Some(sp) = space {
+            let sp_clean = sp.trim();
+            if !sp_clean.is_empty() {
+                cql = format!("{} and space = \"{}\"", cql, sp_clean);
+            }
+        }
+
         let limit_str = limit.to_string();
         let raw = self
             .http
             .get_with_query(
                 "/rest/api/content/search",
-                &[("cql", &cql), ("limit", &limit_str)],
+                &[
+                    ("cql", &cql),
+                    ("limit", &limit_str),
+                    ("expand", "version,space,history.lastUpdated"),
+                ],
             )
             .await?;
 
@@ -34,11 +56,17 @@ impl Confluence {
                     .map(|item| {
                         let id = item["id"].as_str().unwrap_or("");
                         let title = item["title"].as_str().unwrap_or("");
+                        let space_key = item["space"]["key"].as_str().unwrap_or("");
+                        let version = item["version"]["number"].as_u64().unwrap_or(1);
                         let webui = item["_links"]["webui"].as_str().unwrap_or("");
+                        let last_updated = item["history"]["lastUpdated"]["when"].as_str().unwrap_or("");
                         json!({
                             "id": id,
                             "title": title,
+                            "space": space_key,
+                            "version": version,
                             "type": item["type"],
+                            "last_updated": last_updated,
                             "url": format!("{}{}", self.http.base_url(), webui),
                         })
                     })
@@ -46,25 +74,63 @@ impl Confluence {
             })
             .unwrap_or_default();
 
-        Ok(json!({ "query": query, "count": results.len(), "results": results }))
+        Ok(json!({
+            "query": query,
+            "title_only": title_only,
+            "space": space.unwrap_or(""),
+            "count": results.len(),
+            "results": results
+        }))
     }
 
-    /// GET /rest/api/content/{id}?expand=body.storage,version (支持直接传入 Page ID 或网页 URL，带超长截断与分页)
+    /// GET /rest/api/content/{id} (支持直接传入 Page ID 或网页 URL，带 title_only、超长截断与分页)
     pub async fn get_page(
         &self,
         id_or_url: &str,
+        title_only: bool,
         raw_html: bool,
         max_chars: usize,
         offset: usize,
     ) -> Result<Value> {
         let id = parse_confluence_id(id_or_url);
         let path = format!("/rest/api/content/{}", urlencoding::encode(&id));
+
+        if title_only {
+            let raw = self
+                .http
+                .get_with_query(&path, &[("expand", "version,space,history.lastUpdated")])
+                .await?;
+            let title = raw["title"].as_str().unwrap_or("").to_string();
+            let space_key = raw["space"]["key"].as_str().unwrap_or("").to_string();
+            let space_name = raw["space"]["name"].as_str().unwrap_or("").to_string();
+            let version = raw["version"]["number"].as_u64().unwrap_or(0);
+            let updated = raw["history"]["lastUpdated"]["when"].as_str().unwrap_or("");
+            let by = raw["history"]["lastUpdated"]["by"]["displayName"]
+                .as_str()
+                .or(raw["history"]["lastUpdated"]["by"]["username"].as_str())
+                .unwrap_or("");
+
+            return Ok(json!({
+                "id": id,
+                "title": title,
+                "space": {
+                    "key": space_key,
+                    "name": space_name,
+                },
+                "version": version,
+                "last_updated": updated,
+                "updated_by": by,
+                "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+            }));
+        }
+
         let raw = self
             .http
-            .get_with_query(&path, &[("expand", "body.storage,version")])
+            .get_with_query(&path, &[("expand", "body.storage,version,space")])
             .await?;
 
         let title = raw["title"].as_str().unwrap_or("").to_string();
+        let space_key = raw["space"]["key"].as_str().unwrap_or("").to_string();
         let html = raw["body"]["storage"]["value"]
             .as_str()
             .unwrap_or("")
@@ -90,6 +156,7 @@ impl Confluence {
         let mut res = json!({
             "id": id,
             "title": title,
+            "space": space_key,
             "version": version,
             "total_chars": total_chars,
             "returned_chars": returned_chars,
@@ -112,6 +179,46 @@ impl Confluence {
         }
 
         Ok(res)
+    }
+
+    /// GET /rest/api/content/{id}/child/page (获取直接子页面目录清单)
+    pub async fn get_children(&self, id_or_url: &str, limit: u32) -> Result<Value> {
+        let id = parse_confluence_id(id_or_url);
+        let path = format!("/rest/api/content/{}/child/page", urlencoding::encode(&id));
+        let limit_str = limit.to_string();
+        let raw = self
+            .http
+            .get_with_query(&path, &[("limit", &limit_str), ("expand", "version,space")])
+            .await?;
+
+        let children = raw["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|item| {
+                        let child_id = item["id"].as_str().unwrap_or("");
+                        let title = item["title"].as_str().unwrap_or("");
+                        let space_key = item["space"]["key"].as_str().unwrap_or("");
+                        let version = item["version"]["number"].as_u64().unwrap_or(1);
+                        let webui = item["_links"]["webui"].as_str().unwrap_or("");
+                        json!({
+                            "id": child_id,
+                            "title": title,
+                            "space": space_key,
+                            "version": version,
+                            "url": format!("{}{}", self.http.base_url(), webui),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "parent_id": id,
+            "count": children.len(),
+            "children": children,
+            "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+        }))
     }
 
     /// POST /rest/api/content (创建新 Confluence 页面，原生支持时间宏、Jira 卡片宏)
