@@ -160,15 +160,14 @@ pub fn check_ready(cfg: &Config, which: &str) -> Result<()> {
     };
     if url.is_empty() {
         return Err(anyhow!(
-            "缺少 {}_URL。请先运行 `atlassian-cli config init` 或设置环境变量",
+            "缺少 {}_URL。请先运行 `atlassian-cli login` 或设置环境变量",
             which.to_uppercase()
         ));
     }
     if token.trim().is_empty() {
         return Err(anyhow!(
-            "缺少 {}_TOKEN。请运行 `atlassian-cli config init` 或 `atlassian-cli config set-token {} --stdin`",
-            which.to_uppercase(),
-            which
+            "缺少 {}_TOKEN。请运行 `atlassian-cli login` 或设置环境变量",
+            which.to_uppercase()
         ));
     }
     Ok(())
