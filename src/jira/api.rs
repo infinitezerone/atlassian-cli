@@ -503,6 +503,146 @@ impl Jira {
             "url": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
+
+    /// GET /rest/api/2/issue/{key}/transitions (查询单子当前所有合法的下一步流转动作与目标状态)
+    pub async fn get_transitions(&self, key_or_url: &str) -> Result<Value> {
+        let key = parse_jira_key(key_or_url);
+        let path = format!("/rest/api/2/issue/{}/transitions", urlencoding::encode(&key));
+
+        let raw = self.http.get(&path).await?;
+        let transitions = raw["transitions"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|t| {
+                        json!({
+                            "id": t["id"].as_str().unwrap_or(""),
+                            "name": t["name"].as_str().unwrap_or(""),
+                            "to_status": t["to"]["name"].as_str().unwrap_or(""),
+                            "to_status_category": t["to"]["statusCategory"]["name"].as_str().unwrap_or(""),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "issue_key": key,
+            "count": transitions.len(),
+            "transitions": transitions,
+            "url": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
+
+    /// POST /rest/api/2/issueLink (建立两个 Jira 工单之间的关联关系)
+    pub async fn link_issue(
+        &self,
+        from_key_or_url: &str,
+        to_key_or_url: &str,
+        link_type: &str,
+        comment: Option<&str>,
+    ) -> Result<Value> {
+        let from_key = parse_jira_key(from_key_or_url);
+        let to_key = parse_jira_key(to_key_or_url);
+
+        let mut body = json!({
+            "type": {
+                "name": link_type.trim()
+            },
+            "inwardIssue": {
+                "key": from_key
+            },
+            "outwardIssue": {
+                "key": to_key
+            }
+        });
+
+        if let Some(c) = comment {
+            let trimmed = c.trim();
+            if !trimmed.is_empty() {
+                body["comment"] = json!({
+                    "body": trimmed
+                });
+            }
+        }
+
+        self.http.post("/rest/api/2/issueLink", body).await?;
+
+        Ok(json!({
+            "status": "success",
+            "type": link_type.trim(),
+            "from_issue": from_key,
+            "to_issue": to_key,
+            "comment": comment.unwrap_or(""),
+            "url": format!("{}/browse/{}", self.http.base_url(), from_key),
+        }))
+    }
+
+    /// GET /rest/api/2/issue/{key}?fields=attachment (查询工单挂载的全部附件列表)
+    pub async fn list_attachments(&self, key_or_url: &str) -> Result<Value> {
+        let key = parse_jira_key(key_or_url);
+        let path = format!("/rest/api/2/issue/{}", urlencoding::encode(&key));
+
+        let raw = self
+            .http
+            .get_with_query(&path, &[("fields", "attachment")])
+            .await?;
+
+        let attachments = raw["fields"]["attachment"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|att| {
+                        json!({
+                            "id": att["id"].as_str().unwrap_or(""),
+                            "filename": att["filename"].as_str().unwrap_or(""),
+                            "size": att["size"].as_u64().unwrap_or(0),
+                            "mime_type": att["mimeType"].as_str().unwrap_or(""),
+                            "created": att["created"].as_str().unwrap_or(""),
+                            "author": att["author"]["displayName"].as_str().or(att["author"]["name"].as_str()).unwrap_or(""),
+                            "download_url": att["content"].as_str().unwrap_or(""),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "issue_key": key,
+            "count": attachments.len(),
+            "attachments": attachments,
+            "url": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
+
+    /// POST /rest/api/2/issue/{key}/attachments (上传本地文件到 Jira 工单作为附件)
+    pub async fn attach_file(&self, key_or_url: &str, file_path_str: &str) -> Result<Value> {
+        let key = parse_jira_key(key_or_url);
+        let path_obj = std::path::Path::new(file_path_str.trim());
+        if !path_obj.exists() {
+            anyhow::bail!("本地文件不存在: {}", file_path_str);
+        }
+        let file_name = path_obj
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment")
+            .to_string();
+
+        let file_bytes = tokio::fs::read(path_obj).await?;
+        let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
+        let form = reqwest::multipart::Form::new().part("file", part);
+
+        let endpoint = format!("/rest/api/2/issue/{}/attachments", urlencoding::encode(&key));
+        let raw = self.http.post_multipart(&endpoint, form).await?;
+
+        Ok(json!({
+            "status": "success",
+            "issue_key": key,
+            "filename": file_name,
+            "result": raw,
+            "url": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
 }
 
 fn format_jira_started_time(s: &str) -> String {

@@ -84,6 +84,32 @@ pub enum ConfluenceActions {
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },
+    /// 列出或搜索当前用户有权限访问的 Confluence 空间 (Spaces 列表与 Key 查询)
+    Spaces {
+        /// 空间名称或 Space Key 关键字搜索过滤 (可选)
+        query: Option<String>,
+        /// 最多返回条数 (默认 25)
+        #[arg(long, default_value_t = 25)]
+        limit: u32,
+    },
+    /// 查看 Confluence 页面挂载的全部附件列表与下载链接
+    Attachments {
+        /// 页面 ID 或网页 URL
+        id: String,
+        /// 最多返回条数 (默认 50)
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
+    /// 上传本地文件到指定 Confluence 页面作为附件
+    Attach {
+        /// 页面 ID 或网页 URL
+        id: String,
+        /// 本地文件路径 (如 ./spec.pdf 或 /path/to/image.png)
+        file: String,
+        /// 附件备注说明 (可选)
+        #[arg(long)]
+        comment: Option<String>,
+    },
     /// 创建新 Confluence 页面 (原生支持时间宏与 Jira 卡片宏)
     Create(CreatePageArgs),
     /// 安全更新 Confluence 页面 (支持局部精准替换 --find / --replace、追加 --append、置顶 --prepend 与 --dry-run 预览)

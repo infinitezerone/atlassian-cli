@@ -7,7 +7,7 @@ description = "Atlassian 私有部署统一 AI CLI (Jira + Confluence + Bitbucke
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 reqwest-middleware = { version = "0.3", features = ["json"] }
 reqwest-retry = "0.6"
 urlencoding = "2.1"

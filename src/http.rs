@@ -10,6 +10,7 @@ use serde_json::Value;
 /// 统一 HTTP 客户端: 封装 3 次指数退避重试 (reqwest-retry)、5s 建连超时、Bearer Token 认证与 URL Query 编码抽象
 pub struct HttpClient {
     client: ClientWithMiddleware,
+    raw_client: Client,
     base_url: String,
 }
 
@@ -34,11 +35,15 @@ impl HttpClient {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
 
         // 3. 构建带 Middleware 的 Client
-        let client = ClientBuilder::new(raw_client)
+        let client = ClientBuilder::new(raw_client.clone())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Ok(Self { client, base_url })
+        Ok(Self {
+            client,
+            raw_client,
+            base_url,
+        })
     }
 
     fn url(&self, path: &str) -> String {
@@ -94,6 +99,19 @@ impl HttpClient {
     pub async fn delete(&self, path: &str) -> Result<Value> {
         let url = self.url(path);
         let res = self.client.delete(&url).send().await?;
+        Self::parse(res).await
+    }
+
+    /// 发起带文件上传的 Multipart POST 请求 (自动添加 X-Atlassian-Token: nocheck)
+    pub async fn post_multipart(&self, path: &str, form: reqwest::multipart::Form) -> Result<Value> {
+        let url = self.url(path);
+        let res = self
+            .raw_client
+            .post(&url)
+            .header("X-Atlassian-Token", "nocheck")
+            .multipart(form)
+            .send()
+            .await?;
         Self::parse(res).await
     }
 
