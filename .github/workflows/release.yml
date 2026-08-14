@@ -78,10 +78,15 @@ jobs:
 
   update-homebrew-tap:
     name: Update Homebrew Tap Formula
-    needs: create-release
+    needs: [build-release, create-release]
     runs-on: ubuntu-latest
     if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
     steps:
+      - name: Download macOS Release Asset
+        uses: actions/download-artifact@v4
+        with:
+          name: atlassian-cli-aarch64-apple-darwin.tar.gz
+
       - name: Checkout Homebrew Tap
         uses: actions/checkout@v4
         with:
@@ -89,15 +94,12 @@ jobs:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           path: homebrew-tap
 
-      - name: Download macOS Release Asset & Update Formula
+      - name: Update Formula with SHA256
         run: |
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG_NAME#v}"
-          URL="https://github.com/infinitezerone/atlassian-cli/releases/download/${TAG_NAME}/atlassian-cli-aarch64-apple-darwin.tar.gz"
-          
-          curl -fsSL "$URL" -o mac.tar.gz
-          SHA256=$(sha256sum mac.tar.gz | awk '{print $1}')
-          echo "Version: ${VERSION}, SHA256: ${SHA256}"
+          SHA256=$(sha256sum atlassian-cli-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          echo "Updating Homebrew Formula: Version=${VERSION}, SHA256=${SHA256}"
 
           cd homebrew-tap
           FORMULA="Formula/atlassian-cli.rb"
@@ -108,4 +110,5 @@ jobs:
           git config user.email "infinitezerone@users.noreply.github.com"
           git add "$FORMULA"
           git commit -m "chore: auto-update formula for ${TAG_NAME}" || exit 0
+          git pull --rebase origin main
           git push
