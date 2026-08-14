@@ -100,16 +100,54 @@ if [ "$LOCAL" = 1 ] || { [ -z "$VERSION" ] && [ -f "./target/release/atlassian-c
   exit 0
 fi
 
+# 计算文件 SHA256 (兼容 Linux sha256sum / macOS 及部分发行版 shasum)
+sha256_of() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    echo ""
+  fi
+}
+
 # 2) 远程 Release 下载
 VER="${VERSION:-latest}"
-RELEASE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${VER}/${FILE}"
+BASE_RELEASE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${VER}"
 if [ "$VER" = "latest" ]; then
-  RELEASE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/${FILE}"
+  BASE_RELEASE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download"
 fi
+RELEASE_URL="${BASE_RELEASE_URL}/${FILE}"
+CHECKSUM_URL="${BASE_RELEASE_URL}/checksums.txt"
 
 echo "🌐 正在从 GitHub Release 下载 ${FILE} ..."
 TMP_DIR="$(mktemp -d)"
 if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/${FILE}"; then
+  # 下载官方 checksums.txt 并强制校验 SHA256 (防下载篡改 / 供应链攻击)
+  EXPECTED_SHA=""
+  if curl -fsSL "$CHECKSUM_URL" -o "${TMP_DIR}/checksums.txt" 2>/dev/null; then
+    EXPECTED_SHA="$(awk -v f="${FILE}" '$2 == f || $2 == "./" f || $2 == "*" f {print $1; exit}' "${TMP_DIR}/checksums.txt")"
+  fi
+
+  if [ -n "$EXPECTED_SHA" ]; then
+    ACTUAL_SHA="$(sha256_of "${TMP_DIR}/${FILE}")"
+    if [ -z "$ACTUAL_SHA" ]; then
+      echo "⚠️ 未找到 sha256sum/shasum，无法计算本地文件哈希，跳过校验继续安装..."
+    elif [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+      echo "❌ SHA256 校验失败，已中止安装（下载可能被篡改！）"
+      echo "   期望: ${EXPECTED_SHA}"
+      echo "   实际: ${ACTUAL_SHA}"
+      echo "   请勿继续安装，建议检查网络或联系仓库维护者。"
+      rm -rf "$TMP_DIR"
+      exit 1
+    else
+      echo "✅ SHA256 校验通过: ${ACTUAL_SHA:0:12}..."
+    fi
+  else
+    echo "⚠️ 无法获取官方 checksums.txt（旧版本 Release 可能未生成），跳过校验继续安装..."
+  fi
+
   if [[ "$FILE" == *.tar.gz ]]; then
     tar -xzf "${TMP_DIR}/${FILE}" -C "$TMP_DIR"
     install_file "${TMP_DIR}/atlassian-cli"
