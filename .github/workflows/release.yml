@@ -80,7 +80,7 @@ jobs:
     name: Update Homebrew Tap Formula
     needs: [build-release, create-release]
     runs-on: ubuntu-latest
-    if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+    if: secrets.TAP_GITHUB_TOKEN != ''
     steps:
       - name: Download macOS Release Asset
         uses: actions/download-artifact@v4
