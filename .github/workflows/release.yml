@@ -80,14 +80,25 @@ jobs:
     name: Update Homebrew Tap Formula
     needs: [build-release, create-release]
     runs-on: ubuntu-latest
-    if: secrets.TAP_GITHUB_TOKEN != ''
     steps:
+      - name: Check TAP Token
+        id: check_token
+        run: |
+          if [ -n "${{ secrets.TAP_GITHUB_TOKEN }}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "TAP_GITHUB_TOKEN not configured, skipping Homebrew Tap update."
+          fi
+
       - name: Download macOS Release Asset
+        if: steps.check_token.outputs.has_token == 'true'
         uses: actions/download-artifact@v4
         with:
           name: atlassian-cli-aarch64-apple-darwin.tar.gz
 
       - name: Checkout Homebrew Tap
+        if: steps.check_token.outputs.has_token == 'true'
         uses: actions/checkout@v4
         with:
           repository: infinitezerone/homebrew-tap
@@ -95,6 +106,7 @@ jobs:
           path: homebrew-tap
 
       - name: Update Formula with SHA256
+        if: steps.check_token.outputs.has_token == 'true'
         run: |
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG_NAME#v}"
