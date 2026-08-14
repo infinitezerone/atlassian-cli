@@ -43,6 +43,11 @@ impl AtlassianModule for Confluence {
                 offset,
             } => self.get_page(&id, title_only, raw, max_chars, offset).await,
             ConfluenceActions::Children { id, limit } => self.get_children(&id, limit).await,
+            ConfluenceActions::Spaces { query, limit } => self.list_spaces(query.as_deref(), limit).await,
+            ConfluenceActions::Attachments { id, limit } => self.list_attachments(&id, limit).await,
+            ConfluenceActions::Attach { id, file, comment } => {
+                self.attach_file(&id, &file, comment.as_deref()).await
+            }
             ConfluenceActions::Create(a) => self.create_page(&a).await,
             ConfluenceActions::Update(a) => self.update_page(&a).await,
         }

@@ -55,6 +55,10 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `jira comment <KEY> <TEXT>` | Add a comment to an issue |
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
+| | `jira transitions <KEY/URL>` | Inspect all available status transitions & target statuses for an issue |
+| | `jira link <FROM> <TO> [--type "Relates"]` | Link two Jira issues together (supports Relates, Blocks, Cloners, Duplicate) |
+| | `jira attachments <KEY/URL>` | List all attachments with filename, size, and download URLs |
+| | `jira attach <KEY/URL> <FILE>` | Upload a local file to a Jira issue |
 | | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority) |
 | | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels) |
 | | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user (auto-sanitizes `[~...]` / `@{...}`) |
@@ -65,6 +69,9 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | **Confluence** | `confluence search <Q> [-t] [-s S]` | Search pages (full-text by default; `-t` for title-only search, `-s` for space filter) |
 | | `confluence get <ID/URL> [-t] [--raw]` | Fetch page body (plain-text by default; `-t` for title/meta only, `--max-chars` & `--offset`) |
 | | `confluence children <ID/URL>` | List direct child pages with titles, IDs & versions (0-body lightweight inspection) |
+| | `confluence spaces [--query Q]` | List or search all accessible Confluence spaces & Space Keys |
+| | `confluence attachments <ID/URL>` | List all page attachments with filename, size, and download URLs |
+| | `confluence attach <ID/URL> <FILE>` | Upload a local file to a Confluence page |
 | | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
 | | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
 | **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |

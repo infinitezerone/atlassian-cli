@@ -221,6 +221,134 @@ impl Confluence {
         }))
     }
 
+    /// GET /rest/api/space (列出或按关键字检索当前用户有权限的 Confluence 空间)
+    pub async fn list_spaces(&self, query: Option<&str>, limit: u32) -> Result<Value> {
+        let limit_str = if query.is_some() { "100".to_string() } else { limit.to_string() };
+        let raw = self
+            .http
+            .get_with_query("/rest/api/space", &[("limit", &limit_str), ("status", "current")])
+            .await?;
+
+        let q_lower = query.map(|q| q.trim().to_lowercase()).filter(|q| !q.is_empty());
+
+        let spaces = raw["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        let key = item["key"].as_str().unwrap_or("");
+                        let name = item["name"].as_str().unwrap_or("");
+                        let space_type = item["type"].as_str().unwrap_or("global");
+                        let webui = item["_links"]["webui"].as_str().unwrap_or("");
+
+                        if let Some(ref q) = q_lower {
+                            if !key.to_lowercase().contains(q) && !name.to_lowercase().contains(q) {
+                                return None;
+                            }
+                        }
+
+                        Some(json!({
+                            "key": key,
+                            "name": name,
+                            "type": space_type,
+                            "url": format!("{}{}", self.http.base_url(), webui),
+                        }))
+                    })
+                    .take(limit as usize)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "query": query.unwrap_or(""),
+            "count": spaces.len(),
+            "spaces": spaces,
+        }))
+    }
+
+    /// GET /rest/api/content/{id}/child/attachment (查询 Confluence 页面挂载的全部附件列表)
+    pub async fn list_attachments(&self, id_or_url: &str, limit: u32) -> Result<Value> {
+        let id = parse_confluence_id(id_or_url);
+        let path = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
+        let limit_str = limit.to_string();
+        let raw = self
+            .http
+            .get_with_query(&path, &[("limit", &limit_str), ("expand", "version")])
+            .await?;
+
+        let attachments = raw["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|att| {
+                        let att_id = att["id"].as_str().unwrap_or("");
+                        let title = att["title"].as_str().unwrap_or("");
+                        let media_type = att["metadata"]["mediaType"].as_str().unwrap_or("");
+                        let size = att["extensions"]["fileSize"].as_u64().unwrap_or(0);
+                        let version = att["version"]["number"].as_u64().unwrap_or(1);
+                        let download_link = att["_links"]["download"].as_str().unwrap_or("");
+                        json!({
+                            "id": att_id,
+                            "filename": title,
+                            "media_type": media_type,
+                            "size": size,
+                            "version": version,
+                            "download_url": format!("{}{}", self.http.base_url(), download_link),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "page_id": id,
+            "count": attachments.len(),
+            "attachments": attachments,
+            "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+        }))
+    }
+
+    /// POST /rest/api/content/{id}/child/attachment (上传本地文件到 Confluence 页面作为附件)
+    pub async fn attach_file(
+        &self,
+        id_or_url: &str,
+        file_path_str: &str,
+        comment: Option<&str>,
+    ) -> Result<Value> {
+        let id = parse_confluence_id(id_or_url);
+        let path_obj = std::path::Path::new(file_path_str.trim());
+        if !path_obj.exists() {
+            anyhow::bail!("本地文件不存在: {}", file_path_str);
+        }
+        let file_name = path_obj
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment")
+            .to_string();
+
+        let file_bytes = tokio::fs::read(path_obj).await?;
+        let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
+        let mut form = reqwest::multipart::Form::new().part("file", part);
+
+        if let Some(c) = comment {
+            let trimmed = c.trim();
+            if !trimmed.is_empty() {
+                form = form.text("comment", trimmed.to_string());
+            }
+        }
+
+        let endpoint = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
+        let raw = self.http.post_multipart(&endpoint, form).await?;
+
+        Ok(json!({
+            "status": "success",
+            "page_id": id,
+            "filename": file_name,
+            "result": raw,
+            "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+        }))
+    }
+
     /// POST /rest/api/content (创建新 Confluence 页面，原生支持时间宏、Jira 卡片宏)
     pub async fn create_page(&self, a: &CreatePageArgs) -> Result<Value> {
         let storage_html = format_to_storage_html(&a.body);

@@ -112,6 +112,36 @@ pub enum JiraActions {
     WorklogList(ListWorklogsArgs),
     /// 删除单子上的指定工作日志工时记录 (支持 Key 或网页 URL + Worklog ID)
     WorklogDelete(DeleteWorklogArgs),
+    /// 查询单子当前所有可用的流转动作与目标状态 (避免盲猜状态名)
+    Transitions {
+        /// 单子 Key 或网页 URL
+        key: String,
+    },
+    /// 建立两个 Jira 单子之间的关联关系 (支持 Relates / Blocks / Cloners / Duplicate 等)
+    Link {
+        /// 源单子 Key 或网页 URL
+        from_key: String,
+        /// 目标单子 Key 或网页 URL
+        to_key: String,
+        /// 关联类型 (默认 Relates, 可选 Blocks, Cloners, Duplicate, Causes 等)
+        #[arg(long, default_value = "Relates")]
+        r#type: String,
+        /// 关联备注说明 (可选)
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// 查看单子挂载的全部附件列表与下载链接
+    Attachments {
+        /// 单子 Key 或网页 URL
+        key: String,
+    },
+    /// 上传本地文件到指定 Jira 单子作为附件
+    Attach {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 本地文件路径 (如 ./crash.log 或 /path/to/screenshot.png)
+        file: String,
+    },
 }
 
 #[derive(Args)]

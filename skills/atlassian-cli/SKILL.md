@@ -70,6 +70,21 @@ atlassian-cli jira user "John"
 atlassian-cli jira assign PROJ-123 john.doe
 ```
 
+### Transitions, Links & Attachments
+```bash
+# Inspect all available status transitions (avoid guessing transition names!)
+atlassian-cli jira transitions PROJ-123
+
+# Link two issues together (supports Relates, Blocks, Cloners, Duplicate)
+atlassian-cli jira link PROJ-123 PROJ-456 --type "Relates" --comment "Related backend task"
+
+# List attachments on an issue
+atlassian-cli jira attachments PROJ-123
+
+# Upload local file to an issue
+atlassian-cli jira attach PROJ-123 ./crash.log
+```
+
 ### Worklog & Time Tracking
 ```bash
 # Log time spent on an issue (supports "2h 30m", "1d", "45m", --comment, --started)
@@ -86,22 +101,31 @@ atlassian-cli jira worklog-delete PROJ-123 7858155
 
 ## 3. Confluence Workflow Commands
 
-### Search Documentation (CQL)
+### Search Documentation & Spaces (CQL)
 ```bash
 # Full-text search
 atlassian-cli confluence search "Architecture Design" --limit 5
 
 # Title-only exact search (lightweight, zero false positives)
 atlassian-cli confluence search "Release Plan" --title-only --space PROJ
+
+# List or search accessible Confluence spaces
+atlassian-cli confluence spaces --query "Mobile"
 ```
 
-### Inspect Page & Child Tree (Lightweight / 0-body)
+### Inspect Page, Child Tree & Attachments (Lightweight / 0-body)
 ```bash
 # Quick title & metadata check (0 body fetched, saves tokens)
 atlassian-cli confluence get 12345678 --title-only
 
 # List direct child pages under a parent topic (returns IDs & titles)
 atlassian-cli confluence children 12345678 --limit 20
+
+# List attachments on a page
+atlassian-cli confluence attachments 12345678
+
+# Upload local file to a Confluence page
+atlassian-cli confluence attach 12345678 ./spec.pdf --comment "Updated architecture spec"
 ```
 
 ### Fetch Page Body

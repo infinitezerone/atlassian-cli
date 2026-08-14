@@ -43,6 +43,15 @@ impl AtlassianModule for Jira {
             JiraActions::WorklogAdd(a) => self.add_worklog(&a).await,
             JiraActions::WorklogList(a) => self.list_worklogs(&a).await,
             JiraActions::WorklogDelete(a) => self.delete_worklog(&a).await,
+            JiraActions::Transitions { key } => self.get_transitions(&key).await,
+            JiraActions::Link {
+                from_key,
+                to_key,
+                r#type,
+                comment,
+            } => self.link_issue(&from_key, &to_key, &r#type, comment.as_deref()).await,
+            JiraActions::Attachments { key } => self.list_attachments(&key).await,
+            JiraActions::Attach { key, file } => self.attach_file(&key, &file).await,
         }
     }
 }
