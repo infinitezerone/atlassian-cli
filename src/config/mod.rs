@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::error::AppError;
 
@@ -112,29 +113,42 @@ pub fn save(cfg: &Config) -> Result<(), AppError> {
             .map_err(|e| AppError::generic(e.to_string()))?;
     }
 
-    println!("Configuration saved to {}", path.display());
+    eprintln!("Configuration saved to {}", path.display());
     Ok(())
 }
-
-/// 打印配置状态(token 打码显示)
-pub fn status(cfg: &Config) -> Result<(), AppError> {
-    println!("配置文件: {}", config_path().display());
-    println!("TLS 允许自签名证书 (allow_insecure_certs): {}", cfg.allow_insecure_certs);
+/// 打印配置状态(token 打码显示)。
+/// stdout 只输出 JSON(供 AI agent 解析);人类可读摘要走 stderr。
+pub fn status(cfg: &Config) -> Result<Value, AppError> {
+    let mut modules = serde_json::Map::new();
     for module in MODULES {
         let (url, token) = match module {
             "jira" => (&cfg.jira_url, &cfg.jira_token),
             "confluence" => (&cfg.confluence_url, &cfg.confluence_token),
             _ => (&cfg.bitbucket_url, &cfg.bitbucket_token),
         };
-        let url = if url.is_empty() { "(未设置)".to_string() } else { url.clone() };
-        let t = if token.is_empty() {
-            "未配置".to_string()
-        } else {
-            format!("已配置 ({})", mask(token))
-        };
-        println!("  {:<12} url={}  token={}", module, url, t);
+        modules.insert(
+            module.to_string(),
+            json!({
+                "url": url,
+                "token_configured": !token.is_empty(),
+                "token_masked": if token.is_empty() { String::new() } else { mask(token) },
+            }),
+        );
     }
-    Ok(())
+    let v = json!({
+        "status": "ok",
+        "config_path": config_path().display().to_string(),
+        "allow_insecure_certs": cfg.allow_insecure_certs,
+        "modules": modules,
+    });
+
+    // 人类可读摘要走 stderr
+    eprintln!("配置文件: {}", v["config_path"].as_str().unwrap_or(""));
+    eprintln!("TLS 允许自签名证书 (allow_insecure_certs): {}", cfg.allow_insecure_certs);
+    for module in MODULES {
+        eprintln!("  {:<12} {}", module, v["modules"][module]);
+    }
+    Ok(v)
 }
 
 fn mask(token: &str) -> String {

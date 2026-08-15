@@ -131,7 +131,20 @@ enum ConfigActions {
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
+    // clap 解析:help/version 正常输出文本;其余错误转结构化 JSON(exit 2)
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            use clap::error::ErrorKind;
+            if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) {
+                e.print().unwrap_or(());
+                exit(0);
+            }
+            let err = AppError::param_invalid(format!("参数解析失败: {}", e));
+            eprintln!("{}", serde_json::to_string_pretty(&err.to_json()).unwrap());
+            exit(err.code.exit_code());
+        }
+    };
     let mut cfg = match config::load() {
         Ok(c) => c,
         Err(e) => {
@@ -160,10 +173,9 @@ async fn main() {
         // 顶层 Status / Whoami 状态与连通性综合查看
         Commands::Status | Commands::Whoami => {
             let r: Result<Value, AppError> = (async {
-                config::status(&cfg)?;
-                println!();
+                let cfg_status = config::status(&cfg)?;
                 let details = config::test(&cfg).await?;
-                Ok(json!({ "status": "ok", "details": details }))
+                Ok(json!({ "status": "ok", "config": cfg_status, "details": details }))
             })
             .await;
             r
@@ -199,10 +211,7 @@ async fn main() {
                         config::unset(&module)?;
                         Ok(json!({ "status": "ok", "module": module, "message": "配置与凭据已清除" }))
                     }
-                    ConfigActions::Status => {
-                        config::status(&cfg)?;
-                        Ok(json!({ "status": "ok" }))
-                    }
+                    ConfigActions::Status => config::status(&cfg),
                     ConfigActions::Test => {
                         let res = config::test(&cfg).await?;
                         Ok(json!({ "status": "ok", "details": res }))
