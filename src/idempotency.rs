@@ -11,8 +11,11 @@ use crate::config;
 /// 配置:
 /// - `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` 窗口秒数(默认 300,0 = 关闭)
 /// - `ATLASSIAN_CLI_FORCE_WRITE=1` 强制绕过(存量脚本/CI 迁移期用)
+/// - `ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES` 文件超限(默认 512KB)时自动
+///   裁剪为只保留窗口期内的记录,避免无界增长(窗口外的记录本就无用)
 
 const DEFAULT_WINDOW_SECS: u64 = 300;
+const DEFAULT_MAX_BYTES: u64 = 512 * 1024;
 
 /// FNV-1a 64 位哈希(零依赖,跨进程稳定,足够去重场景)
 fn fnv1a(data: &[u8]) -> u64 {
@@ -51,6 +54,13 @@ fn forced() -> bool {
         .unwrap_or(false)
 }
 
+fn max_bytes() -> u64 {
+    std::env::var("ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_BYTES)
+}
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -82,6 +92,7 @@ fn check_in(
     if window == 0 || forced() {
         return None;
     }
+    prune_if_needed(log, window);
     let fp = fingerprint(method, path, body);
     let content = std::fs::read_to_string(log).ok()?;
     let now = now_secs();
@@ -95,6 +106,31 @@ fn check_in(
         }
     }
     None
+}
+
+/// 幂等文件裁剪:超过阈值时重写为只保留窗口期内的记录。
+/// 窗口外的记录对去重毫无价值(反正不会命中),剪掉控制磁盘增长。
+/// 失败静默;重写非原子但量小(≤阈值,通常几十 KB),单进程 CLI 可接受。
+fn prune_if_needed(log: &std::path::Path, window: u64) {
+    let Ok(meta) = std::fs::metadata(log) else { return };
+    if meta.len() <= max_bytes() {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(log) else { return };
+    let now = now_secs();
+    let mut kept: Vec<&str> = Vec::new();
+    for line in content.lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        let ts = v["ts"].as_u64().unwrap_or(0);
+        if now.saturating_sub(ts) <= window {
+            kept.push(line);
+        }
+    }
+    let mut data = kept.join("\n");
+    if !kept.is_empty() {
+        data.push('\n');
+    }
+    let _ = std::fs::write(log, data);
 }
 
 fn record_in(log: &std::path::Path, method: &str, path: &str, body: Option<&Value>) {
@@ -221,5 +257,30 @@ mod tests {
         assert_eq!(v["action"], "skipped");
         assert_eq!(v["path"], "/x");
         assert!(v["hint"].as_str().unwrap().contains("FORCE_WRITE"));
+    }
+
+    #[test]
+    fn test_prune_removes_stale() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("ATLASSIAN_CLI_FORCE_WRITE");
+            std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW", "300");
+            std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES", "100");
+        }
+        let log = tmp_dir("prune");
+        let now = now_secs();
+        // 手写两条:一条过期(窗口外),一条新鲜
+        let stale = json!({ "ts": now - 1000, "method": "POST", "path": "/stale", "hash": "aaaa" });
+        let fresh = json!({ "ts": now, "method": "POST", "path": "/fresh", "hash": "bbbb" });
+        std::fs::write(&log, format!("{}\n{}\n", stale, fresh)).unwrap();
+        assert!(std::fs::metadata(&log).unwrap().len() > 100);
+
+        // check 触发裁剪(hash 不匹配,返回 None,但文件已被重写)
+        assert!(check_in(&log, "POST", "/fresh", Some(&json!({ "x": 1 }))).is_none());
+
+        let content = std::fs::read_to_string(&log).unwrap();
+        assert!(!content.contains("/stale"), "窗口外的记录应被裁剪");
+        assert!(content.contains("/fresh"), "窗口内的记录应保留");
+        let _ = std::fs::remove_file(&log);
     }
 }
