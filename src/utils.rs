@@ -1,5 +1,16 @@
 use crate::error::AppError;
 
+/// 拒绝含控制字符 / 查询参数残留的资源 ID(防 Agent 幻觉输入直接注入 URL)。
+/// 调用时机:在 parse_* 之后、发起 HTTP 之前。
+pub fn ensure_clean_id(kind: &str, id: &str) -> Result<(), AppError> {
+    let has_ctrl = id.chars().any(|c| c.is_control());
+    let has_query = id.contains('?') || id.contains('#');
+    if has_ctrl || has_query {
+        return Err(AppError::param_invalid(format!("{} 含非法字符: '{}'", kind, id)));
+    }
+    Ok(())
+}
+
 /// 从 Jira Issue Key 或完整网页 URL 中提取 Issue Key
 ///
 /// 支持格式:
@@ -151,5 +162,16 @@ mod tests {
         assert_eq!(parse_username("@{john.doe}"), "john.doe");
         assert_eq!(parse_username("@john.doe"), "john.doe");
         assert_eq!(parse_username("  [~john.doe]  "), "john.doe");
+    }
+
+    #[test]
+    fn test_ensure_clean_id() {
+        assert!(ensure_clean_id("key", "PROJ-123").is_ok());
+        assert!(ensure_clean_id("key", "123456").is_ok());
+        assert!(ensure_clean_id("key", "PROJ-123?x=1").is_err());
+        assert!(ensure_clean_id("key", "PROJ-123#frag").is_err());
+        assert!(ensure_clean_id("key", "PROJ\u{0000}").is_err());
+        let e = ensure_clean_id("key", "A?B").unwrap_err();
+        assert_eq!(e.code, crate::error::ErrorCode::ParamInvalid);
     }
 }

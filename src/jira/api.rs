@@ -23,6 +23,7 @@ impl Jira {
     /// GET /rest/api/2/issue/{key} -> 支持 --raw 原始全量输出与 --fields 自定义字段挑选
     pub async fn get_issue(&self, a: &GetIssueArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key);
+        crate::utils::ensure_clean_id("Jira issue key", &key)?;
         let enc_key = urlencoding::encode(&key);
         let raw = self
             .http
@@ -190,16 +191,28 @@ impl Jira {
         }))
     }
 
-    /// GET /rest/api/2/search?jql={jql}&maxResults={limit}
-    pub async fn search_issues(&self, jql: &str, limit: u32) -> Result<Value, AppError> {
+    /// GET /rest/api/2/search?jql={jql}&maxResults={limit}&startAt={start}&fields={fields}
+    pub async fn search_issues(
+        &self,
+        jql: &str,
+        limit: u32,
+        fields: Option<&str>,
+        start_at: u32,
+    ) -> Result<Value, AppError> {
         let limit_str = limit.to_string();
-        let raw = self
-            .http
-            .get_with_query(
-                "/rest/api/2/search",
-                &[("jql", jql), ("maxResults", &limit_str)],
-            )
-            .await?;
+        let start_str = start_at.to_string();
+        let mut query: Vec<(&str, &str)> = vec![
+            ("jql", jql),
+            ("maxResults", &limit_str),
+            ("startAt", &start_str),
+        ];
+        if let Some(f) = fields {
+            let f = f.trim();
+            if !f.is_empty() {
+                query.push(("fields", f));
+            }
+        }
+        let raw = self.http.get_with_query("/rest/api/2/search", &query).await?;
 
         let issues = raw["issues"].as_array().map(|arr| {
             arr.iter().map(|item| {
@@ -215,12 +228,25 @@ impl Jira {
             }).collect::<Vec<_>>()
         }).unwrap_or_default();
 
-        Ok(json!({
+        let total = raw["total"].as_u64().unwrap_or(0);
+        let mut res = json!({
             "jql": jql,
             "total": raw["total"],
+            "start_at": start_at,
             "count": issues.len(),
             "issues": issues,
-        }))
+        });
+        // 分页提示:还有更多结果时给出翻页指引
+        let fetched = start_at as u64 + issues.len() as u64;
+        if fetched < total {
+            res["hint"] = json!(format!(
+                "共 {} 条,本次返回 {} 条。追加 --start-at {} 获取下一页",
+                total,
+                issues.len(),
+                fetched
+            ));
+        }
+        Ok(res)
     }
 
     /// POST /rest/api/2/issue

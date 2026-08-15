@@ -95,6 +95,7 @@ impl Confluence {
         offset: usize,
     ) -> Result<Value, AppError> {
         let id = parse_confluence_id(id_or_url);
+        crate::utils::ensure_clean_id("Confluence page id", &id)?;
         let path = format!("/rest/api/content/{}", urlencoding::encode(&id));
 
         if title_only {

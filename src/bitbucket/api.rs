@@ -131,6 +131,7 @@ impl Bitbucket {
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id} (支持直接传入完整 PR 网页 URL)
     pub async fn get_pr(&self, a: &GetPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        crate::utils::ensure_clean_id("Bitbucket PR id", &pr_id)?;
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}",
             urlencoding::encode(&project),
