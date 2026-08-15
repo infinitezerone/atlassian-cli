@@ -92,7 +92,6 @@ impl HttpClient {
         let url = self.url(path);
         let res = self.client.post(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
-        crate::idempotency::record("POST", path, Some(&body));
         crate::audit::append("POST", path, "ok", Some(&body), false);
         Ok(out)
     }
@@ -106,7 +105,6 @@ impl HttpClient {
         let url = self.url(path);
         let res = self.client.put(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
-        crate::idempotency::record("PUT", path, Some(&body));
         crate::audit::append("PUT", path, "ok", Some(&body), false);
         Ok(out)
     }
@@ -120,7 +118,6 @@ impl HttpClient {
         let url = self.url(path);
         let res = self.client.delete(&url).send().await?;
         let out = Self::parse(res).await?;
-        crate::idempotency::record("DELETE", path, None);
         crate::audit::append("DELETE", path, "ok", None, false);
         Ok(out)
     }

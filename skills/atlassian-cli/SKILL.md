@@ -313,4 +313,4 @@ atlassian-cli audit --limit 50
 
 Use it to verify what the AI actually changed and when. Entries marked `"replayed": true` were deduplicated writes that did NOT hit the server.
 
-**Disk protection**: `audit.jsonl` auto-rotates to `audit.1.jsonl` (keeps one backup) past 5MB (`ATLASSIAN_CLI_AUDIT_MAX_BYTES` to tune); `idempotency.jsonl` auto-prunes to window-relevant entries past 512KB (`ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES`). No unbounded log growth — these files will never pressure disk like session logs can.
+**Disk protection**: `audit.jsonl` auto-rotates to `audit.1.jsonl` (keeps one backup) past 5MB (`ATLASSIAN_CLI_AUDIT_MAX_BYTES` to tune). There is **no separate idempotency file** — the dedupe fingerprint lives in each audit entry, so every write op performs exactly **one** disk append. Replay lookups scan only the recent tail of the file (records are time-ordered; scanning stops at the window boundary). No unbounded growth, no extra write amplification.
