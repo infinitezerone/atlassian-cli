@@ -4,6 +4,7 @@ mod confluence;
 mod http;
 mod jira;
 mod module;
+mod security;
 mod skill;
 mod utils;
 
@@ -207,7 +208,13 @@ async fn main() {
     };
 
     match result {
-        Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap()),
+        Ok(mut v) => {
+            // 防提示注入:清洗所有服务器可控文本字段(工单描述/评论/页面正文/PR 评论/diff 等)
+            if security::sanitize_all_strings(&mut v) {
+                v["sanitized"] = json!(true);
+            }
+            println!("{}", serde_json::to_string_pretty(&v).unwrap());
+        }
         Err(e) => {
             eprintln!("{}", json!({ "status": "error", "message": e.to_string() }));
             exit(1);

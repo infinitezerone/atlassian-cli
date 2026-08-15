@@ -138,7 +138,7 @@ impl HttpClient {
             serde_json::from_str(&text)
                 .map_err(|e| anyhow!("响应不是合法 JSON ({}): {}", status, e))
         } else {
-            // 尽量把 Jira/Confluence 的 error message 透传出来
+            // 尽量把 Jira/Confluence 的 error message 透传出来(先做提示注入清洗)
             let server_msg = serde_json::from_str::<Value>(&text)
                 .ok()
                 .and_then(|v| {
@@ -146,9 +146,11 @@ impl HttpClient {
                         .or_else(|| v.get("errors"))
                         .or_else(|| v.get("errorMessages").and_then(|m| m.as_array().and_then(|a| a.first())))
                         .and_then(|m| m.as_str())
-                        .map(|s| s.to_string())
+                        .map(|s| crate::security::sanitize_external_text(s))
                 })
-                .unwrap_or_else(|| text.chars().take(300).collect());
+                .unwrap_or_else(|| {
+                    crate::security::sanitize_external_text(&text.chars().take(300).collect::<String>())
+                });
 
             let detail = match status.as_u16() {
                 401 => "认证失败: PAT Token 无效或已过期",
