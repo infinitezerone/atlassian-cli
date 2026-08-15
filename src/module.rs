@@ -60,6 +60,14 @@ pub fn preview_json(
     v
 }
 
+/// 判断 HttpClient 返回的是否为幂等回放响应(HttpClient 层拦截命中时返回)。
+/// 写操作在构造成功响应前调用:若为回放,直接透传,避免吞掉状态标记。
+pub fn is_replayed(raw: &Value) -> bool {
+    raw.get("status")
+        .map(|s| s.as_str() == Some("idempotent_replay"))
+        .unwrap_or(false)
+}
+
 /// 所有 Atlassian 产品模块的统一契约。
 ///
 /// 一个模块 = 一个产品(Jira / Confluence / Bitbucket / 未来的 Bamboo / StatusPage…),

@@ -98,6 +98,9 @@ impl Bitbucket {
         crate::module::require_confirmed(&self.policy)?;
 
         let raw = self.http.post(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
         let res_reviewers = raw["reviewers"]
             .as_array()
             .map(|arr| {
@@ -337,6 +340,9 @@ impl Bitbucket {
         crate::module::require_confirmed(&self.policy)?;
 
         let raw = self.http.post(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         let anchor_info = if !raw["commentAnchor"].is_null() {
             json!({
@@ -501,6 +507,9 @@ impl Bitbucket {
         }
         crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post(&path, json!({})).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",

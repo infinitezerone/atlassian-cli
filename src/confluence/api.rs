@@ -400,6 +400,9 @@ impl Confluence {
         crate::module::require_confirmed(&self.policy)?;
 
         let raw = self.http.post("/rest/api/content", body_json).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
         let page_id = raw["id"].as_str().unwrap_or("").to_string();
 
         Ok(json!({
@@ -517,6 +520,9 @@ impl Confluence {
         });
 
         let raw = self.http.put(&path, put_body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
         let next_version = raw["version"]["number"].as_u64().unwrap_or(orig_version + 1);
 
         Ok(json!({
