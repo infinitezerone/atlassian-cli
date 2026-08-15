@@ -184,47 +184,7 @@ async fn main() {
         Commands::Confluence { action } => run::<confluence::Confluence>(&cfg, action, policy).await,
         Commands::Bitbucket { action } => run::<bitbucket::Bitbucket>(&cfg, action, policy).await,
         // 配置管理走独立分支(交互式 / 本地文件操作,不经过 HTTP 模块)
-        Commands::Config { action } => {
-            let r: Result<Value, AppError> = (async {
-                match action {
-                    ConfigActions::Init => {
-                        config::init_interactive(None).await?;
-                        Ok(json!({ "status": "ok" }))
-                    }
-                    ConfigActions::Set { module, stdin, token } => {
-                        if stdin {
-                            config::set_token_from_stdin(&module)?;
-                            Ok(json!({ "status": "ok", "module": module, "token": "已从 stdin 写入 (打码存储)" }))
-                        } else if let Some(t) = token {
-                            config::set_token(&module, &t)?;
-                            Ok(json!({ "status": "ok", "module": module, "token": "已写入 (打码存储)" }))
-                        } else {
-                            config::token_interactive(&module)?;
-                            Ok(json!({ "status": "ok", "module": module, "token": "已写入 (打码存储)" }))
-                        }
-                    }
-                    ConfigActions::SetUrl { module, url } => {
-                        config::set_url(&module, &url)?;
-                        Ok(json!({ "status": "ok", "module": module, "url": url }))
-                    }
-                    ConfigActions::Unset { module } => {
-                        config::unset(&module)?;
-                        Ok(json!({ "status": "ok", "module": module, "message": "配置与凭据已清除" }))
-                    }
-                    ConfigActions::Status => config::status(&cfg),
-                    ConfigActions::Test => {
-                        let res = config::test(&cfg).await?;
-                        Ok(json!({ "status": "ok", "details": res }))
-                    }
-                    ConfigActions::Path => {
-                        println!("{}", config::config_path().display());
-                        Ok(json!({ "status": "ok" }))
-                    }
-                }
-            })
-            .await;
-            r
-        }
+        Commands::Config { action } => handle_config(action, &cfg).await,
         Commands::Skill { action } => {
             match action.unwrap_or(SkillSubActions::Install) {
                 SkillSubActions::Install => skill::install_skill(),
@@ -259,4 +219,40 @@ async fn run<M: AtlassianModule>(
     m.handle(action)
         .await
         .map_err(|e| e.with_module(M::module_name()))
+}
+
+/// Config 子命令处理(独立于 HTTP 模块的分发,便于单独测试)
+async fn handle_config(action: ConfigActions, cfg: &config::Config) -> Result<Value, AppError> {
+    match action {
+        ConfigActions::Init => {
+            config::init_interactive(None).await?;
+            Ok(json!({ "status": "ok" }))
+        }
+        ConfigActions::Set { module, stdin, token } => {
+            if stdin {
+                config::set_token_from_stdin(&module)?;
+                Ok(json!({ "status": "ok", "module": module, "token": "已从 stdin 写入 (打码存储)" }))
+            } else if let Some(t) = token {
+                config::set_token(&module, &t)?;
+                Ok(json!({ "status": "ok", "module": module, "token": "已写入 (打码存储)" }))
+            } else {
+                config::token_interactive(&module)?;
+                Ok(json!({ "status": "ok", "module": module, "token": "已写入 (打码存储)" }))
+            }
+        }
+        ConfigActions::SetUrl { module, url } => {
+            config::set_url(&module, &url)?;
+            Ok(json!({ "status": "ok", "module": module, "url": url }))
+        }
+        ConfigActions::Unset { module } => {
+            config::unset(&module)?;
+            Ok(json!({ "status": "ok", "module": module, "message": "配置与凭据已清除" }))
+        }
+        ConfigActions::Status => config::status(cfg),
+        ConfigActions::Test => {
+            let res = config::test(cfg).await?;
+            Ok(json!({ "status": "ok", "details": res }))
+        }
+        ConfigActions::Path => Ok(json!({ "status": "ok", "path": config::config_path().display().to_string() })),
+    }
 }
