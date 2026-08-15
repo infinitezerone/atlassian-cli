@@ -1,18 +1,20 @@
-use anyhow::Result;
 use serde_json::{json, Value};
 
 use super::cli::{CreatePageArgs, UpdatePageArgs};
+use crate::error::AppError;
 use crate::http::HttpClient;
+use crate::module::WritePolicy;
 use crate::utils::parse_confluence_id;
 
 /// Confluence 产品客户端
 pub struct Confluence {
     http: HttpClient,
+    policy: WritePolicy,
 }
 
 impl Confluence {
-    pub fn new(http: HttpClient) -> Self {
-        Self { http }
+    pub fn new(http: HttpClient, policy: WritePolicy) -> Self {
+        Self { http, policy }
     }
 
     /// GET /rest/api/content/search?cql=... (支持全文检索或仅按标题精准搜索 --title-only，以及按空间 space 过滤)
@@ -22,7 +24,7 @@ impl Confluence {
         limit: u32,
         title_only: bool,
         space: Option<&str>,
-    ) -> Result<Value> {
+    ) -> Result<Value, AppError> {
         let mut cql = if title_only {
             format!("title ~ \"{}\"", query)
         } else {
@@ -91,7 +93,7 @@ impl Confluence {
         raw_html: bool,
         max_chars: usize,
         offset: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value, AppError> {
         let id = parse_confluence_id(id_or_url);
         let path = format!("/rest/api/content/{}", urlencoding::encode(&id));
 
@@ -182,7 +184,7 @@ impl Confluence {
     }
 
     /// GET /rest/api/content/{id}/child/page (获取直接子页面目录清单)
-    pub async fn get_children(&self, id_or_url: &str, limit: u32) -> Result<Value> {
+    pub async fn get_children(&self, id_or_url: &str, limit: u32) -> Result<Value, AppError> {
         let id = parse_confluence_id(id_or_url);
         let path = format!("/rest/api/content/{}/child/page", urlencoding::encode(&id));
         let limit_str = limit.to_string();
@@ -222,7 +224,7 @@ impl Confluence {
     }
 
     /// GET /rest/api/space (列出或按关键字检索当前用户有权限的 Confluence 空间)
-    pub async fn list_spaces(&self, query: Option<&str>, limit: u32) -> Result<Value> {
+    pub async fn list_spaces(&self, query: Option<&str>, limit: u32) -> Result<Value, AppError> {
         let limit_str = if query.is_some() { "100".to_string() } else { limit.to_string() };
         let raw = self
             .http
@@ -267,7 +269,7 @@ impl Confluence {
     }
 
     /// GET /rest/api/content/{id}/child/attachment (查询 Confluence 页面挂载的全部附件列表)
-    pub async fn list_attachments(&self, id_or_url: &str, limit: u32) -> Result<Value> {
+    pub async fn list_attachments(&self, id_or_url: &str, limit: u32) -> Result<Value, AppError> {
         let id = parse_confluence_id(id_or_url);
         let path = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
         let limit_str = limit.to_string();
@@ -314,11 +316,11 @@ impl Confluence {
         id_or_url: &str,
         file_path_str: &str,
         comment: Option<&str>,
-    ) -> Result<Value> {
+    ) -> Result<Value, AppError> {
         let id = parse_confluence_id(id_or_url);
         let path_obj = std::path::Path::new(file_path_str.trim());
         if !path_obj.exists() {
-            anyhow::bail!("本地文件不存在: {}", file_path_str);
+            return Err(AppError::param_invalid(format!("本地文件不存在: {}", file_path_str)));
         }
         let file_name = path_obj
             .file_name()
@@ -350,7 +352,7 @@ impl Confluence {
     }
 
     /// POST /rest/api/content (创建新 Confluence 页面，原生支持时间宏、Jira 卡片宏)
-    pub async fn create_page(&self, a: &CreatePageArgs) -> Result<Value> {
+    pub async fn create_page(&self, a: &CreatePageArgs) -> Result<Value, AppError> {
         let storage_html = format_to_storage_html(&a.body);
         let mut body_json = json!({
             "type": "page",
@@ -383,7 +385,7 @@ impl Confluence {
     }
 
     /// PUT /rest/api/content/{id} (安全更新 Confluence 页面，带 5 重准确性防御体系与版本备份)
-    pub async fn update_page(&self, a: &UpdatePageArgs) -> Result<Value> {
+    pub async fn update_page(&self, a: &UpdatePageArgs) -> Result<Value, AppError> {
         let id = parse_confluence_id(&a.id_or_url);
         let path = format!("/rest/api/content/{}", urlencoding::encode(&id));
 
@@ -412,12 +414,21 @@ impl Confluence {
                 if count_trimmed == 1 {
                     (orig_html.replace(trimmed_find, replace_str), "local_replace_trimmed".to_string())
                 } else if count_trimmed == 0 {
-                    anyhow::bail!("❌ 错误: 未在原页面中匹配到目标文本: '{}'。请使用 confluence get 确认最新页面内容", find_str);
+                    return Err(AppError::param_invalid(format!(
+                        "❌ 错误: 未在原页面中匹配到目标文本: '{}'。请使用 confluence get 确认最新页面内容",
+                        find_str
+                    )));
                 } else {
-                    anyhow::bail!("❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段", count_trimmed);
+                    return Err(AppError::param_invalid(format!(
+                        "❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段",
+                        count_trimmed
+                    )));
                 }
             } else if count > 1 {
-                anyhow::bail!("❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段", count);
+                return Err(AppError::param_invalid(format!(
+                    "❌ 错误: 目标文本在页面中匹配到了 {} 次 (存在二义性)。请在 --find 中包含更长的前后上下文句段",
+                    count
+                )));
             } else {
                 (orig_html.replace(find_str, replace_str), "local_replace".to_string())
             }
@@ -433,7 +444,9 @@ impl Confluence {
             // D. 全量覆盖模式
             (format_to_storage_html(body_str), "full_overwrite".to_string())
         } else {
-            anyhow::bail!("未提供任何更新内容。请使用 --find 与 --replace (局部替换)、--append (末尾追加)、--prepend (顶部插入) 或 --body (全量更新)");
+            return Err(AppError::param_invalid(
+                "未提供任何更新内容。请使用 --find 与 --replace (局部替换)、--append (末尾追加)、--prepend (顶部插入) 或 --body (全量更新)",
+            ));
         };
 
         // 3. 若为 dry_run 只读预览模式

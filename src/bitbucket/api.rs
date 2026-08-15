@@ -1,22 +1,24 @@
-use anyhow::Result;
 use serde_json::{json, Value};
 
 use super::cli::{CommentPrArgs, CreatePrArgs, GetPrArgs, ListPrsArgs};
+use crate::error::AppError;
 use crate::http::HttpClient;
+use crate::module::WritePolicy;
 use crate::utils::{parse_bitbucket_pr, parse_bitbucket_repo};
 
 /// Bitbucket 产品客户端
 pub struct Bitbucket {
     http: HttpClient,
+    policy: WritePolicy,
 }
 
 impl Bitbucket {
-    pub fn new(http: HttpClient) -> Self {
-        Self { http }
+    pub fn new(http: HttpClient, policy: WritePolicy) -> Self {
+        Self { http, policy }
     }
 
     /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests (支持自动加载网页预设 Reviewer 与手动扩展)
-    pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value> {
+    pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value, AppError> {
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
             urlencoding::encode(&a.project),
@@ -108,7 +110,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id} (支持直接传入完整 PR 网页 URL)
-    pub async fn get_pr(&self, a: &GetPrArgs) -> Result<Value> {
+    pub async fn get_pr(&self, a: &GetPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}",
@@ -130,7 +132,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/changes 与 /diff
-    pub async fn get_pr_diff(&self, a: &GetPrArgs) -> Result<Value> {
+    pub async fn get_pr_diff(&self, a: &GetPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
 
         let changes_path = format!(
@@ -243,7 +245,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/activities
-    pub async fn get_pr_comments(&self, a: &GetPrArgs) -> Result<Value> {
+    pub async fn get_pr_comments(&self, a: &GetPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/activities",
@@ -287,7 +289,7 @@ impl Bitbucket {
     }
 
     /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments (支持全局评论与指定文件/行号的行内评论)
-    pub async fn add_pr_comment(&self, a: &CommentPrArgs) -> Result<Value> {
+    pub async fn add_pr_comment(&self, a: &CommentPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/comments",
@@ -335,7 +337,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/users?filter={query}&limit={limit}
-    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value> {
+    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value, AppError> {
         let limit_str = limit.to_string();
         let raw = self
             .http
@@ -382,7 +384,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests?state={state}&limit={limit}
-    pub async fn list_prs(&self, a: &ListPrsArgs) -> Result<Value> {
+    pub async fn list_prs(&self, a: &ListPrsArgs) -> Result<Value, AppError> {
         let (project, repo) = parse_bitbucket_repo(
             a.url.as_deref(),
             a.project.as_deref(),
@@ -454,7 +456,7 @@ impl Bitbucket {
     }
 
     /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/approve (支持直接传入网页 URL)
-    pub async fn approve_pr(&self, a: &GetPrArgs) -> Result<Value> {
+    pub async fn approve_pr(&self, a: &GetPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/approve",

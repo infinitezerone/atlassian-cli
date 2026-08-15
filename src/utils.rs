@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::AppError;
 
 /// 从 Jira Issue Key 或完整网页 URL 中提取 Issue Key
 ///
@@ -55,18 +55,18 @@ pub fn parse_bitbucket_pr(
     id_or_url: &str,
     project: Option<&str>,
     repo: Option<&str>,
-) -> Result<(String, String, String)> {
+) -> Result<(String, String, String), AppError> {
     let trimmed = id_or_url.trim();
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         let proj_idx = trimmed
             .find("/projects/")
-            .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /projects/ 路径"))?;
+            .ok_or_else(|| AppError::param_invalid("URL 中未找到 /projects/ 路径"))?;
         let repo_idx = trimmed
             .find("/repos/")
-            .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /repos/ 路径"))?;
+            .ok_or_else(|| AppError::param_invalid("URL 中未找到 /repos/ 路径"))?;
         let pr_idx = trimmed
             .find("/pull-requests/")
-            .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /pull-requests/ 路径"))?;
+            .ok_or_else(|| AppError::param_invalid("URL 中未找到 /pull-requests/ 路径"))?;
 
         let p = &trimmed[proj_idx + "/projects/".len()..repo_idx];
         let r = &trimmed[repo_idx + "/repos/".len()..pr_idx];
@@ -74,7 +74,7 @@ pub fn parse_bitbucket_pr(
         let id = pr_part.split(&['/', '?', '#'][..]).next().unwrap_or(pr_part);
 
         if p.is_empty() || r.is_empty() || id.is_empty() {
-            anyhow::bail!("无法从 URL 中解析出有效的 Project, Repo 或 PR ID");
+            return Err(AppError::param_invalid("无法从 URL 中解析出有效的 Project, Repo 或 PR ID"));
         }
         return Ok((p.to_string(), r.to_string(), id.to_string()));
     }
@@ -82,7 +82,7 @@ pub fn parse_bitbucket_pr(
     let p = project.unwrap_or("").trim();
     let r = repo.unwrap_or("").trim();
     if p.is_empty() || r.is_empty() {
-        anyhow::bail!("未传入完整 PR 网页 URL 时，必须提供 --project 和 --repo 参数");
+        return Err(AppError::param_invalid("未传入完整 PR 网页 URL 时，必须提供 --project 和 --repo 参数"));
     }
     Ok((p.to_string(), r.to_string(), trimmed.to_string()))
 }
@@ -92,16 +92,16 @@ pub fn parse_bitbucket_repo(
     repo_url: Option<&str>,
     project: Option<&str>,
     repo: Option<&str>,
-) -> Result<(String, String)> {
+) -> Result<(String, String), AppError> {
     if let Some(input) = repo_url {
         let trimmed = input.trim();
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
             let proj_idx = trimmed
                 .find("/projects/")
-                .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /projects/ 路径"))?;
+                .ok_or_else(|| AppError::param_invalid("URL 中未找到 /projects/ 路径"))?;
             let repo_idx = trimmed
                 .find("/repos/")
-                .ok_or_else(|| anyhow::anyhow!("URL 中未找到 /repos/ 路径"))?;
+                .ok_or_else(|| AppError::param_invalid("URL 中未找到 /repos/ 路径"))?;
 
             let p = &trimmed[proj_idx + "/projects/".len()..repo_idx];
             let after_repo = &trimmed[repo_idx + "/repos/".len()..];
@@ -116,7 +116,7 @@ pub fn parse_bitbucket_repo(
     let p = project.unwrap_or("").trim();
     let r = repo.unwrap_or("").trim();
     if p.is_empty() || r.is_empty() {
-        anyhow::bail!("必须提供 --project 和 --repo 参数（或传入 --url 完整仓库/PR 网页链接）");
+        return Err(AppError::param_invalid("必须提供 --project 和 --repo 参数（或传入 --url 完整仓库/PR 网页链接）"));
     }
     Ok((p.to_string(), r.to_string()))
 }

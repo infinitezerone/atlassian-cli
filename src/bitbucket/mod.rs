@@ -4,12 +4,13 @@ mod cli;
 pub use api::Bitbucket;
 pub use cli::BitbucketActions;
 
-use anyhow::Result;
 use serde_json::Value;
+
+use crate::error::AppError;
 
 use crate::config::Config;
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
+use crate::module::{AtlassianModule, WritePolicy};
 
 impl AtlassianModule for Bitbucket {
     type Action = BitbucketActions;
@@ -18,16 +19,17 @@ impl AtlassianModule for Bitbucket {
         "bitbucket"
     }
 
-    fn connect(cfg: &Config) -> Result<Self> {
+    fn connect(cfg: &Config, policy: WritePolicy) -> Result<Self, AppError> {
         crate::config::check_ready(cfg, "bitbucket")?;
         Ok(Self::new(HttpClient::new(
             cfg.bitbucket_url.clone(),
             &cfg.bitbucket_token,
             cfg.allow_insecure_certs,
-        )?))
+        )?,
+            policy))
     }
 
-    async fn handle(&self, action: BitbucketActions) -> Result<Value> {
+    async fn handle(&self, action: BitbucketActions) -> Result<Value, AppError> {
         match action {
             BitbucketActions::ListPrs(a) => self.list_prs(&a).await,
             BitbucketActions::CreatePr(a) => self.create_pr(&a).await,

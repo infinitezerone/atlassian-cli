@@ -5,8 +5,9 @@ pub mod url;
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::error::AppError;
 
 pub use interactive::*;
 pub use probe::*;
@@ -58,13 +59,13 @@ pub fn config_path() -> PathBuf {
 }
 
 /// 读取配置,优先级:环境变量 > config.json 字段
-pub fn load() -> Result<Config> {
+pub fn load() -> Result<Config, AppError> {
     let path = config_path();
     let mut cfg = if path.exists() {
         let content = fs::read_to_string(&path)
-            .with_context(|| format!("读取配置失败: {}", path.display()))?;
+            .map_err(|e| AppError::config_missing(format!("读取配置失败 ({}): {}", path.display(), e)))?;
         serde_json::from_str::<Config>(&content)
-            .with_context(|| format!("解析配置失败: {}", path.display()))?
+            .map_err(|e| AppError::config_missing(format!("解析配置失败 ({}): {}", path.display(), e)))?
     } else {
         Config::default()
     };
@@ -94,17 +95,21 @@ pub fn load() -> Result<Config> {
 }
 
 /// 保存配置并强制收紧权限:目录 700、文件 600(仅当前用户可读写)
-pub fn save(cfg: &Config) -> Result<()> {
+pub fn save(cfg: &Config) -> Result<(), AppError> {
     let dir = config_dir();
-    fs::create_dir_all(&dir)?;
+    fs::create_dir_all(&dir).map_err(|e| AppError::generic(e.to_string()))?;
     let path = config_path();
-    fs::write(&path, serde_json::to_string_pretty(cfg)?)?;
+    let body =
+        serde_json::to_string_pretty(cfg).map_err(|e| AppError::generic(format!("配置序列化失败: {}", e)))?;
+    fs::write(&path, body).map_err(|e| AppError::generic(e.to_string()))?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+            .map_err(|e| AppError::generic(e.to_string()))?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .map_err(|e| AppError::generic(e.to_string()))?;
     }
 
     println!("Configuration saved to {}", path.display());
@@ -112,7 +117,7 @@ pub fn save(cfg: &Config) -> Result<()> {
 }
 
 /// 打印配置状态(token 打码显示)
-pub fn status(cfg: &Config) -> Result<()> {
+pub fn status(cfg: &Config) -> Result<(), AppError> {
     println!("配置文件: {}", config_path().display());
     println!("TLS 允许自签名证书 (allow_insecure_certs): {}", cfg.allow_insecure_certs);
     for module in MODULES {
@@ -151,24 +156,24 @@ fn env_override(current: String, name: &str) -> String {
     current.trim().to_string()
 }
 
-pub fn check_ready(cfg: &Config, which: &str) -> Result<()> {
+pub fn check_ready(cfg: &Config, which: &str) -> Result<(), AppError> {
     let (url, token) = match which {
         "jira" => (&cfg.jira_url, &cfg.jira_token),
         "confluence" => (&cfg.confluence_url, &cfg.confluence_token),
         "bitbucket" => (&cfg.bitbucket_url, &cfg.bitbucket_token),
-        _ => return Err(anyhow!("未知模块: {}", which)),
+        _ => return Err(AppError::param_invalid(format!("未知模块: {}", which))),
     };
     if url.is_empty() {
-        return Err(anyhow!(
+        return Err(AppError::config_missing(format!(
             "缺少 {}_URL。请先运行 `atlassian-cli login` 或设置环境变量",
             which.to_uppercase()
-        ));
+        )));
     }
     if token.trim().is_empty() {
-        return Err(anyhow!(
+        return Err(AppError::config_missing(format!(
             "缺少 {}_TOKEN。请运行 `atlassian-cli login` 或设置环境变量",
             which.to_uppercase()
-        ));
+        )));
     }
     Ok(())
 }

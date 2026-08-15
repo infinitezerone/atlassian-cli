@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use crate::error::AppError;
 use serde_json::{json, Value};
 
 use super::Config;
@@ -11,7 +11,7 @@ pub async fn probe_module_credential(
     url: &str,
     token: &str,
     allow_insecure: bool,
-) -> Result<String> {
+) -> Result<String, AppError> {
     let (user, _) = probe_module_credential_with_healing(module, url, token, allow_insecure).await?;
     Ok(user)
 }
@@ -22,7 +22,7 @@ pub async fn probe_module_credential_with_healing(
     url: &str,
     token: &str,
     allow_insecure: bool,
-) -> Result<(String, Option<String>)> {
+) -> Result<(String, Option<String>), AppError> {
     match probe_single_url(module, url, token, allow_insecure).await {
         Ok(user) => Ok((user, None)),
         Err(orig_err) => {
@@ -73,7 +73,7 @@ async fn probe_single_url(
     url: &str,
     token: &str,
     allow_insecure: bool,
-) -> Result<String> {
+) -> Result<String, AppError> {
     let client = HttpClient::new(url.to_string(), token, allow_insecure)?;
     match module {
         "jira" => {
@@ -110,12 +110,12 @@ async fn probe_single_url(
             client.get("/rest/api/1.0/projects?limit=1").await?;
             Ok("已连通".to_string())
         }
-        _ => bail!("未知模块: {}", module),
+        _ => return Err(AppError::param_invalid(format!("未知模块: {}", module))),
     }
 }
 
 /// 探测已配置模块的网络连通性与 PAT 登录身份信息
-pub async fn test(cfg: &Config) -> Result<Value> {
+pub async fn test(cfg: &Config) -> Result<Value, AppError> {
     use std::io::Write;
     println!("=== 正在测试 Atlassian 服务连通性与 Token 有效性 ===");
     let mut results = serde_json::Map::new();
