@@ -1,3 +1,4 @@
+mod audit;
 mod bitbucket;
 mod config;
 mod confluence;
@@ -89,6 +90,12 @@ enum Commands {
     Schema {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
+    },
+    /// 查看本地写操作审计日志 (谁在何时改了什么,含幂等回放标记)
+    Audit {
+        /// 最多返回条数 (默认 20)
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
     },
 }
 
@@ -193,6 +200,7 @@ async fn main() {
             }
         }
         Commands::Schema { command } => schema::render(&Cli::command(), &command),
+        Commands::Audit { limit } => audit::read(limit as usize),
     };
 
     match result {
