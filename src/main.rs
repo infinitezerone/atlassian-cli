@@ -1,6 +1,7 @@
 mod bitbucket;
 mod config;
 mod confluence;
+mod error;
 mod http;
 mod jira;
 mod module;
@@ -10,11 +11,11 @@ mod utils;
 
 use std::process::exit;
 
-use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
-use module::AtlassianModule;
+use error::AppError;
+use module::{AtlassianModule, WritePolicy};
 
 #[derive(Parser)]
 #[command(
@@ -26,6 +27,14 @@ struct Cli {
     /// 允许自签名 / 无效 TLS 证书 (不校验 HTTPS 证书合法性)
     #[arg(long, short = 'k', global = true)]
     insecure: bool,
+
+    /// 写操作仅预览 (打印将执行的请求,不真正调用 API)
+    #[arg(long, global = true)]
+    dry_run: bool,
+
+    /// 显式确认写操作 (不传则写操作将被拒绝执行)
+    #[arg(long, global = true)]
+    confirm: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -120,8 +129,8 @@ async fn main() {
     let mut cfg = match config::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", json!({ "status": "error", "message": e.to_string() }));
-            exit(1);
+            eprintln!("{}", serde_json::to_string_pretty(&e.to_json()).unwrap());
+            exit(e.code.exit_code());
         }
     };
 
@@ -129,11 +138,13 @@ async fn main() {
         cfg.allow_insecure_certs = true;
     }
 
+    let policy = WritePolicy::from_flags(cli.dry_run, cli.confirm);
+
     // 装配层分发: 顶层快捷命令 + 业务模块 + 高级 config
     let result = match cli.command {
         // 顶层 Setup / Login 入口
         Commands::Setup { module } | Commands::Login { module } => {
-            let r: Result<Value> = (async {
+            let r: Result<Value, AppError> = (async {
                 config::init_interactive(module.as_deref()).await?;
                 Ok(json!({ "status": "ok" }))
             })
@@ -142,7 +153,7 @@ async fn main() {
         }
         // 顶层 Status / Whoami 状态与连通性综合查看
         Commands::Status | Commands::Whoami => {
-            let r: Result<Value> = (async {
+            let r: Result<Value, AppError> = (async {
                 config::status(&cfg)?;
                 println!();
                 let details = config::test(&cfg).await?;
@@ -151,12 +162,12 @@ async fn main() {
             .await;
             r
         }
-        Commands::Jira { action } => run::<jira::Jira>(&cfg, action).await,
-        Commands::Confluence { action } => run::<confluence::Confluence>(&cfg, action).await,
-        Commands::Bitbucket { action } => run::<bitbucket::Bitbucket>(&cfg, action).await,
+        Commands::Jira { action } => run::<jira::Jira>(&cfg, action, policy).await,
+        Commands::Confluence { action } => run::<confluence::Confluence>(&cfg, action, policy).await,
+        Commands::Bitbucket { action } => run::<bitbucket::Bitbucket>(&cfg, action, policy).await,
         // 配置管理走独立分支(交互式 / 本地文件操作,不经过 HTTP 模块)
         Commands::Config { action } => {
-            let r: Result<Value> = (async {
+            let r: Result<Value, AppError> = (async {
                 match action {
                     ConfigActions::Init => {
                         config::init_interactive(None).await?;
@@ -216,16 +227,20 @@ async fn main() {
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
         }
         Err(e) => {
-            eprintln!("{}", json!({ "status": "error", "message": e.to_string() }));
-            exit(1);
+            eprintln!("{}", serde_json::to_string_pretty(&e.to_json()).unwrap());
+            exit(e.code.exit_code());
         }
     }
 }
 
 /// 泛型装配:自动连接任意 AtlassianModule -> 分发 action -> 统一捕获与包装错误前缀
-async fn run<M: AtlassianModule>(cfg: &config::Config, action: M::Action) -> Result<Value> {
-    let m = M::connect(cfg).map_err(|e| anyhow::anyhow!("[{}] {}", M::module_name(), e))?;
+async fn run<M: AtlassianModule>(
+    cfg: &config::Config,
+    action: M::Action,
+    policy: WritePolicy,
+) -> Result<Value, AppError> {
+    let m = M::connect(cfg, policy).map_err(|e| e.with_module(M::module_name()))?;
     m.handle(action)
         .await
-        .map_err(|e| anyhow::anyhow!("[{}] {}", M::module_name(), e))
+        .map_err(|e| e.with_module(M::module_name()))
 }

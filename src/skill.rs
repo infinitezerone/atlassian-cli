@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::AppError;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
@@ -16,13 +16,13 @@ const COMMON_SKILL_REL_PATHS: &[&str] = &[
 ];
 
 /// 获取所有主流 Agent 的 Skill 绝对目标路径
-pub fn get_skill_paths() -> Result<Vec<PathBuf>> {
-    let home = dirs_next::home_dir().ok_or_else(|| anyhow::anyhow!("无法获取当前用户 Home 目录"))?;
+pub fn get_skill_paths() -> Result<Vec<PathBuf>, AppError> {
+    let home = dirs_next::home_dir().ok_or_else(|| AppError::generic("无法获取当前用户 Home 目录"))?;
     Ok(COMMON_SKILL_REL_PATHS.iter().map(|p| home.join(p)).collect())
 }
 
 /// 自动将官方 Agent Skill 覆盖同步部署到所有常见的 AI Agent 配置目录
-pub fn install_skill() -> Result<Value> {
+pub fn install_skill() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
     let mut installed_paths: Vec<String> = Vec::new();
 
@@ -47,7 +47,7 @@ pub fn install_skill() -> Result<Value> {
 }
 
 /// 检查常见 AI Agent 目录中 Skill 的部署状态
-pub fn skill_status() -> Result<Value> {
+pub fn skill_status() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
     let mut status_list: Vec<Value> = Vec::new();
     let mut installed_count = 0;

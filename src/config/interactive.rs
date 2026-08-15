@@ -1,6 +1,6 @@
 use std::io::{IsTerminal, Write};
 
-use anyhow::{bail, Result};
+use crate::error::AppError;
 use rpassword::prompt_password;
 
 use super::probe::probe_module_credential_with_healing;
@@ -8,13 +8,13 @@ use super::url::normalize_module_url;
 use super::{config_path, load, save, Config, MODULES};
 
 /// 交互式初始化: 引导配置 URL 与 Token，边填边实时探测验证凭据 (支持指定单模块)
-pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
+pub async fn init_interactive(target_module: Option<&str>) -> Result<(), AppError> {
     let mut cfg = if config_path().exists() { load()? } else { Config::default() };
 
     let target_modules: Vec<&str> = if let Some(m) = target_module {
         let m_lower = m.trim().to_lowercase();
         if !MODULES.contains(&m_lower.as_str()) {
-            bail!("未知模块: {} (可选: jira / confluence / bitbucket)", m);
+            return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", m)));
         }
         vec![MODULES.iter().find(|&&x| x == m_lower.as_str()).cloned().unwrap()]
     } else {
@@ -139,67 +139,67 @@ pub async fn init_interactive(target_module: Option<&str>) -> Result<()> {
 }
 
 /// 交互式设置单个模块的 Token:本机终端暗显输入,不经任何日志/网络
-pub fn token_interactive(module: &str) -> Result<()> {
+pub fn token_interactive(module: &str) -> Result<(), AppError> {
     if !MODULES.contains(&module) {
-        bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module);
+        return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", module)));
     }
     let v = prompt_token(&format!("Enter {} Token", module))?;
     if v.is_empty() {
-        bail!("输入为空,未做修改");
+        return Err(AppError::param_invalid("输入为空,未做修改"));
     }
     set_token(module, &v)
 }
 
 /// 从标准输入读取 Token 并设置 (适合 Agent / CI 避免命令行明文泄露)
-pub fn set_token_from_stdin(module: &str) -> Result<()> {
+pub fn set_token_from_stdin(module: &str) -> Result<(), AppError> {
     if !MODULES.contains(&module) {
-        bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module);
+        return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", module)));
     }
     let mut line = String::new();
     std::io::stdin().read_line(&mut line)?;
     let token = line.trim();
     if token.is_empty() {
-        bail!("标准输入读取的 token 为空");
+        return Err(AppError::param_invalid("标准输入读取的 token 为空"));
     }
     set_token(module, token)
 }
 
 /// 设置某个模块的 PAT Token
-pub fn set_token(module: &str, token: &str) -> Result<()> {
+pub fn set_token(module: &str, token: &str) -> Result<(), AppError> {
     let clean_token = token.trim();
     if clean_token.is_empty() {
-        bail!("token 不能为空");
+        return Err(AppError::param_invalid("token 不能为空"));
     }
     let mut cfg = load()?;
     match module {
         "jira" => cfg.jira_token = clean_token.to_string(),
         "confluence" => cfg.confluence_token = clean_token.to_string(),
         "bitbucket" => cfg.bitbucket_token = clean_token.to_string(),
-        _ => bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module),
+        _ => return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", module))),
     }
     save(&cfg)
 }
 
 /// 设置某个模块的 Base URL (自动 normalize 补全 protocol 并去除尾部斜杠)
-pub fn set_url(module: &str, url: &str) -> Result<()> {
+pub fn set_url(module: &str, url: &str) -> Result<(), AppError> {
     let clean_url = normalize_module_url(url, module);
     if clean_url.is_empty() {
-        bail!("url 不能为空");
+        return Err(AppError::param_invalid("url 不能为空"));
     }
     let mut cfg = load()?;
     match module {
         "jira" => cfg.jira_url = clean_url,
         "confluence" => cfg.confluence_url = clean_url,
         "bitbucket" => cfg.bitbucket_url = clean_url,
-        _ => bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module),
+        _ => return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", module))),
     }
     save(&cfg)
 }
 
 /// 清除某个模块的凭据与配置
-pub fn unset(module: &str) -> Result<()> {
+pub fn unset(module: &str) -> Result<(), AppError> {
     if !MODULES.contains(&module) {
-        bail!("未知模块: {} (可选: jira / confluence / bitbucket)", module);
+        return Err(AppError::param_invalid(format!("未知模块: {} (可选: jira / confluence / bitbucket)", module)));
     }
     let mut cfg = load()?;
     match module {
@@ -220,7 +220,7 @@ pub fn unset(module: &str) -> Result<()> {
     save(&cfg)
 }
 
-fn prompt_token(prompt: &str) -> Result<String> {
+fn prompt_token(prompt: &str) -> Result<String, AppError> {
     if std::io::stdin().is_terminal() {
         Ok(prompt_password(prompt)?.trim().to_string())
     } else {
@@ -232,7 +232,7 @@ fn prompt_token(prompt: &str) -> Result<String> {
     }
 }
 
-fn input_line(prompt: &str) -> Result<String> {
+fn input_line(prompt: &str) -> Result<String, AppError> {
     print!("{}: ", prompt);
     std::io::stdout().flush().ok();
     let mut line = String::new();

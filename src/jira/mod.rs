@@ -4,12 +4,13 @@ mod cli;
 pub use api::Jira;
 pub use cli::JiraActions;
 
-use anyhow::Result;
 use serde_json::Value;
+
+use crate::error::AppError;
 
 use crate::config::Config;
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
+use crate::module::{AtlassianModule, WritePolicy};
 
 impl AtlassianModule for Jira {
     type Action = JiraActions;
@@ -18,16 +19,17 @@ impl AtlassianModule for Jira {
         "jira"
     }
 
-    fn connect(cfg: &Config) -> Result<Self> {
+    fn connect(cfg: &Config, policy: WritePolicy) -> Result<Self, AppError> {
         crate::config::check_ready(cfg, "jira")?;
         Ok(Self::new(HttpClient::new(
             cfg.jira_url.clone(),
             &cfg.jira_token,
             cfg.allow_insecure_certs,
-        )?))
+        )?,
+            policy))
     }
 
-    async fn handle(&self, action: JiraActions) -> Result<Value> {
+    async fn handle(&self, action: JiraActions) -> Result<Value, AppError> {
         match action {
             JiraActions::Get(a) => self.get_issue(&a).await,
             JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,

@@ -1,25 +1,27 @@
-use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
 use super::cli::{
     AddWorklogArgs, CreateIssueArgs, DeleteWorklogArgs, GetIssueArgs, ListWorklogsArgs,
     UpdateIssueArgs,
 };
+use crate::error::AppError;
 use crate::http::HttpClient;
+use crate::module::WritePolicy;
 use crate::utils::{parse_jira_key, parse_username};
 
 /// Jira 产品客户端:一个方法 = 一个 API,新增 API 就在这加方法
 pub struct Jira {
     http: HttpClient,
+    policy: WritePolicy,
 }
 
 impl Jira {
-    pub fn new(http: HttpClient) -> Self {
-        Self { http }
+    pub fn new(http: HttpClient, policy: WritePolicy) -> Self {
+        Self { http, policy }
     }
 
     /// GET /rest/api/2/issue/{key} -> 支持 --raw 原始全量输出与 --fields 自定义字段挑选
-    pub async fn get_issue(&self, a: &GetIssueArgs) -> Result<Value> {
+    pub async fn get_issue(&self, a: &GetIssueArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key);
         let enc_key = urlencoding::encode(&key);
         let raw = self
@@ -120,7 +122,7 @@ impl Jira {
     }
 
     /// POST /rest/api/2/issue/{key}/comment (支持直接传入 Issue Key 或网页 URL)
-    pub async fn add_comment(&self, key_or_url: &str, text: &str) -> Result<Value> {
+    pub async fn add_comment(&self, key_or_url: &str, text: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
         let raw = self
@@ -139,7 +141,7 @@ impl Jira {
     }
 
     /// POST /rest/api/2/issue/{key}/transitions (支持直接传入 Issue Key 或网页 URL)
-    pub async fn transition(&self, key_or_url: &str, status: &str) -> Result<Value> {
+    pub async fn transition(&self, key_or_url: &str, status: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
         let meta = self
@@ -158,7 +160,7 @@ impl Jira {
                 })
             })
             .and_then(|t| t["id"].as_str())
-            .ok_or_else(|| anyhow::anyhow!("未找到匹配的状态: '{}'。请检查可用流转状态名", status))?;
+            .ok_or_else(|| AppError::not_found(format!("未找到匹配的状态: '{}'。请检查可用流转状态名", status)))?;
 
         self.http
             .post(
@@ -175,7 +177,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/search?jql={jql}&maxResults={limit}
-    pub async fn search_issues(&self, jql: &str, limit: u32) -> Result<Value> {
+    pub async fn search_issues(&self, jql: &str, limit: u32) -> Result<Value, AppError> {
         let limit_str = limit.to_string();
         let raw = self
             .http
@@ -208,7 +210,7 @@ impl Jira {
     }
 
     /// POST /rest/api/2/issue
-    pub async fn create_issue(&self, a: &CreateIssueArgs) -> Result<Value> {
+    pub async fn create_issue(&self, a: &CreateIssueArgs) -> Result<Value, AppError> {
         let mut fields = serde_json::Map::new();
         fields.insert("project".to_string(), json!({ "key": a.project }));
         fields.insert("summary".to_string(), json!(a.summary));
@@ -246,7 +248,7 @@ impl Jira {
     }
 
     /// PUT /rest/api/2/issue/{key} (支持直接传入 Issue Key 或网页 URL)
-    pub async fn update_issue(&self, a: &UpdateIssueArgs) -> Result<Value> {
+    pub async fn update_issue(&self, a: &UpdateIssueArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);
         let enc_key = urlencoding::encode(&key);
         let mut fields = serde_json::Map::new();
@@ -274,7 +276,9 @@ impl Jira {
         }
 
         if fields.is_empty() {
-            bail!("未提供任何需要更新的字段 (--summary, --description, --assignee, --priority, --labels)");
+            return Err(AppError::param_invalid(
+                "未提供任何需要更新的字段 (--summary, --description, --assignee, --priority, --labels)",
+            ));
         }
 
         let body = json!({ "fields": fields });
@@ -291,7 +295,7 @@ impl Jira {
     }
 
     /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL，自动剥离 [~...] 装饰)
-    pub async fn assign_issue(&self, key_or_url: &str, assignee: &str) -> Result<Value> {
+    pub async fn assign_issue(&self, key_or_url: &str, assignee: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let clean_assignee = parse_username(assignee);
         let enc_key = urlencoding::encode(&key);
@@ -309,7 +313,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/user/search?username={query}&maxResults={limit}
-    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value> {
+    pub async fn search_users(&self, query: &str, limit: u32) -> Result<Value, AppError> {
         let limit_str = limit.to_string();
         let raw = self
             .http
@@ -361,7 +365,7 @@ impl Jira {
         key_or_url: &str,
         query: Option<&str>,
         limit: u32,
-    ) -> Result<Value> {
+    ) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let limit_str = limit.to_string();
         let q = query.unwrap_or("");
@@ -417,7 +421,7 @@ impl Jira {
     }
 
     /// POST /rest/api/2/issue/{key}/worklog (在单子上登记工作工时与日志)
-    pub async fn add_worklog(&self, a: &AddWorklogArgs) -> Result<Value> {
+    pub async fn add_worklog(&self, a: &AddWorklogArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);
         let path = format!("/rest/api/2/issue/{}/worklog", urlencoding::encode(&key));
 
@@ -452,7 +456,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/issue/{key}/worklog (查询单子上的历史工时日志记录)
-    pub async fn list_worklogs(&self, a: &ListWorklogsArgs) -> Result<Value> {
+    pub async fn list_worklogs(&self, a: &ListWorklogsArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);
         let path = format!("/rest/api/2/issue/{}/worklog", urlencoding::encode(&key));
 
@@ -485,7 +489,7 @@ impl Jira {
     }
 
     /// DELETE /rest/api/2/issue/{key}/worklog/{id} (删除指定工时记录)
-    pub async fn delete_worklog(&self, a: &DeleteWorklogArgs) -> Result<Value> {
+    pub async fn delete_worklog(&self, a: &DeleteWorklogArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);
         let path = format!(
             "/rest/api/2/issue/{}/worklog/{}",
@@ -505,7 +509,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/issue/{key}/transitions (查询单子当前所有合法的下一步流转动作与目标状态)
-    pub async fn get_transitions(&self, key_or_url: &str) -> Result<Value> {
+    pub async fn get_transitions(&self, key_or_url: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let path = format!("/rest/api/2/issue/{}/transitions", urlencoding::encode(&key));
 
@@ -541,7 +545,7 @@ impl Jira {
         to_key_or_url: &str,
         link_type: &str,
         comment: Option<&str>,
-    ) -> Result<Value> {
+    ) -> Result<Value, AppError> {
         let from_key = parse_jira_key(from_key_or_url);
         let to_key = parse_jira_key(to_key_or_url);
 
@@ -579,7 +583,7 @@ impl Jira {
     }
 
     /// GET /rest/api/2/issue/{key}?fields=attachment (查询工单挂载的全部附件列表)
-    pub async fn list_attachments(&self, key_or_url: &str) -> Result<Value> {
+    pub async fn list_attachments(&self, key_or_url: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let path = format!("/rest/api/2/issue/{}", urlencoding::encode(&key));
 
@@ -616,11 +620,11 @@ impl Jira {
     }
 
     /// POST /rest/api/2/issue/{key}/attachments (上传本地文件到 Jira 工单作为附件)
-    pub async fn attach_file(&self, key_or_url: &str, file_path_str: &str) -> Result<Value> {
+    pub async fn attach_file(&self, key_or_url: &str, file_path_str: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let path_obj = std::path::Path::new(file_path_str.trim());
         if !path_obj.exists() {
-            anyhow::bail!("本地文件不存在: {}", file_path_str);
+            return Err(AppError::param_invalid(format!("本地文件不存在: {}", file_path_str)));
         }
         let file_name = path_obj
             .file_name()

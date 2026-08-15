@@ -4,12 +4,13 @@ mod cli;
 pub use api::Confluence;
 pub use cli::ConfluenceActions;
 
-use anyhow::Result;
 use serde_json::Value;
+
+use crate::error::AppError;
 
 use crate::config::Config;
 use crate::http::HttpClient;
-use crate::module::AtlassianModule;
+use crate::module::{AtlassianModule, WritePolicy};
 
 impl AtlassianModule for Confluence {
     type Action = ConfluenceActions;
@@ -18,16 +19,17 @@ impl AtlassianModule for Confluence {
         "confluence"
     }
 
-    fn connect(cfg: &Config) -> Result<Self> {
+    fn connect(cfg: &Config, policy: WritePolicy) -> Result<Self, AppError> {
         crate::config::check_ready(cfg, "confluence")?;
         Ok(Self::new(HttpClient::new(
             cfg.confluence_url.clone(),
             &cfg.confluence_token,
             cfg.allow_insecure_certs,
-        )?))
+        )?,
+            policy))
     }
 
-    async fn handle(&self, action: ConfluenceActions) -> Result<Value> {
+    async fn handle(&self, action: ConfluenceActions) -> Result<Value, AppError> {
         match action {
             ConfluenceActions::Search {
                 query,
