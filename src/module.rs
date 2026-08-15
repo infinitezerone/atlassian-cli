@@ -32,7 +32,8 @@ pub fn require_confirmed(policy: &WritePolicy) -> Result<(), AppError> {
         Ok(())
     } else {
         Err(AppError::param_invalid("写操作需要显式确认")
-            .with_detail("确认执行请追加 --confirm;仅预览请追加 --dry-run"))
+            .with_detail("确认执行请追加 --confirm;仅预览请追加 --dry-run")
+            .with_suggestion("确认执行请追加 --confirm;仅预览请追加 --dry-run"))
     }
 }
 
