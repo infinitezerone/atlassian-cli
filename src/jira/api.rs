@@ -124,6 +124,8 @@ impl Jira {
 
     /// POST /rest/api/2/issue/{key}/comment (支持直接传入 Issue Key 或网页 URL)
     pub async fn add_comment(&self, key_or_url: &str, text: &str) -> Result<Value, AppError> {
+        // 提及语法校验:拦 [~xxx] 格式错误,防止 AI 拼错 @人
+        crate::utils::validate_mentions(text)?;
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
         let path = format!("/rest/api/2/issue/{}/comment", enc_key);
@@ -199,6 +201,8 @@ impl Jira {
         fields: Option<&str>,
         start_at: u32,
     ) -> Result<Value, AppError> {
+        // 本地语法级校验:拦截空查询 / 括号不配对 / 字符串未闭合等 AI 常见低级错误
+        crate::utils::validate_jql(jql)?;
         let limit_str = limit.to_string();
         let start_str = start_at.to_string();
         let mut query: Vec<(&str, &str)> = vec![
@@ -249,6 +253,90 @@ impl Jira {
         Ok(res)
     }
 
+    /// GET /rest/api/2/jql/autocompletedata —— 查询 JQL 可用字段与函数
+    pub async fn suggest_fields(&self) -> Result<Value, AppError> {
+        let raw = self.http.get("/rest/api/2/jql/autocompletedata").await?;
+        let fields: Vec<Value> = raw["visibleFieldNames"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|f| {
+                        json!({
+                            "name": f["name"],
+                            "value": f["value"],
+                            "display_name": f["displayName"],
+                            "auto": f["auto"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let functions: Vec<Value> = raw["visibleFunctionNames"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|f| {
+                        json!({
+                            "name": f["name"],
+                            "value": f["value"],
+                            "display_name": f["displayName"],
+                            "is_list": f["isList"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(json!({
+            "status": "ok",
+            "field_count": fields.len(),
+            "fields": fields,
+            "function_count": functions.len(),
+            "functions": functions,
+        }))
+    }
+
+    /// GET /rest/api/2/jql/autocompletedata/suggestions —— 查询 JQL 字段候选值
+    pub async fn suggest_values(
+        &self,
+        field: &str,
+        query: Option<&str>,
+        limit: u32,
+    ) -> Result<Value, AppError> {
+        let limit_str = limit.to_string();
+        let mut params: Vec<(&str, &str)> = vec![("fieldName", field), ("maxResults", &limit_str)];
+        if let Some(q) = query {
+            let q = q.trim();
+            if !q.is_empty() {
+                params.push(("fieldValue", q));
+            }
+        }
+        let raw = self
+            .http
+            .get_with_query("/rest/api/2/jql/autocompletedata/suggestions", &params)
+            .await?;
+        let results: Vec<Value> = raw["results"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| {
+                        json!({
+                            "value": r["value"],
+                            "display_name": r["displayName"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(json!({
+            "status": "ok",
+            "field": field,
+            "query": query,
+            "count": results.len(),
+            "results": results,
+            "hint": "拼 JQL 时使用 results 中的 value 作为字段值;提及用户时用 atlassian-cli jira user 查询 mention_syntax",
+        }))
+    }
+
     /// POST /rest/api/2/issue
     pub async fn create_issue(&self, a: &CreateIssueArgs) -> Result<Value, AppError> {
         let mut fields = serde_json::Map::new();
@@ -257,6 +345,7 @@ impl Jira {
         fields.insert("issuetype".to_string(), json!({ "name": a.issue_type }));
 
         if let Some(ref desc) = a.description {
+            crate::utils::validate_mentions(desc)?;
             fields.insert("description".to_string(), json!(desc));
         }
         if let Some(ref assignee) = a.assignee {
@@ -301,6 +390,7 @@ impl Jira {
             fields.insert("summary".to_string(), json!(sum));
         }
         if let Some(ref desc) = a.description {
+            crate::utils::validate_mentions(desc)?;
             fields.insert("description".to_string(), json!(desc));
         }
         if let Some(ref assignee) = a.assignee {
@@ -474,6 +564,19 @@ impl Jira {
     pub async fn add_worklog(&self, a: &AddWorklogArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);
         let path = format!("/rest/api/2/issue/{}/worklog", urlencoding::encode(&key));
+
+        // 字段值校验:拦 AI 常见的工时格式错 / 开始时间错 / 提及语法错
+        crate::utils::validate_time_spent(&a.time_spent)?;
+        if let Some(ref c) = a.comment {
+            if !c.trim().is_empty() {
+                crate::utils::validate_mentions(c)?;
+            }
+        }
+        if let Some(ref s) = a.started {
+            if !s.trim().is_empty() {
+                crate::utils::validate_started(s)?;
+            }
+        }
 
         let mut body = json!({
             "timeSpent": a.time_spent.trim(),
