@@ -50,9 +50,11 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | :--- | :--- | :--- |
 | **Auth** | `login [MODULE]` / `setup` | Interactive setup with real-time probe & URL normalization (supports `login jira`) |
 | | `status` / `whoami` | Inspect config state, TLS flags, and PAT identities |
-| **Jira** | `jira search <JQL>` | JQL query search with slim JSON output |
+| **Jira** | `jira search <JQL>` | JQL query search with slim JSON output (local syntax validation: parens/quotes) |
 | | `jira get <KEY/URL>` | Fetch issue details & comments (accepts Key or browser URL, `--comments-limit`) |
 | | `jira user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
+| | `jira suggest-fields` | List all available JQL fields & functions (official autocompletedata API) |
+| | `jira suggest-values --field F [--query Q]` | Resolve candidate values for a JQL field (users, projects, statuses, versions…) |
 | | `jira comment <KEY> <TEXT>` | Add a comment to an issue |
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
 | | `jira transitions <KEY/URL>` | Inspect all available status transitions & target statuses for an issue |
@@ -86,6 +88,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `config set-url <module> <URL>` | Update Base URL for a module |
 | | `config test` / `config status` | Verify connectivity & Token permissions |
 | **Introspect** | `schema [path...]` | Machine-readable command tree JSON for AI agents (e.g. `schema jira comment`) |
+| **Audit** | `audit [--limit N]` | Local write-audit trail: what was changed, when, by which request (incl. `replayed` markers) |
 
 **Global Flags** (usable anywhere):
 
@@ -94,6 +97,8 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | `--dry-run` | Preview write operations as JSON (`status: dry_run`) without calling the API — zero side effects |
 | `--confirm` | Explicitly confirm write operations; **without it the CLI refuses to execute** (exit 2) |
 | `-k` / `--insecure` | Skip TLS certificate validation (MITM risk — only with user approval) |
+
+**AI Retry Safety**: identical write requests (method + path + body) are deduplicated within a 300s window (`~/.atlassian-cli/idempotency.jsonl`). Replays return `status: idempotent_replay` (exit 0) instead of re-sending — set `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` to adjust (0 = off), `ATLASSIAN_CLI_FORCE_WRITE=1` to bypass. Input guards: JQL syntax, `time_spent` units (w/d/h/m), `--started` ranges, and `[~mention]` syntax are all validated before any request.
 
 *Note: For self-signed TLS certificates in enterprise environments, prefer configuring the CA as trusted. If `--insecure` (or `-k`) must be used, only do so after informing the user that certificate validation is disabled.*
 
