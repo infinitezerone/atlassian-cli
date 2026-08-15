@@ -87,6 +87,8 @@ pub struct AppError {
     pub detail: Option<String>,
     /// 模块名(由 run() 附加,如 "jira")
     pub module: Option<String>,
+    /// 覆盖默认 suggestion(可选,用于给具体场景更精准的下一步建议)
+    suggestion: Option<String>,
     pub source: Option<anyhow::Error>,
 }
 
@@ -97,12 +99,19 @@ impl AppError {
             message: message.into(),
             detail: None,
             module: None,
+            suggestion: None,
             source: None,
         }
     }
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    /// 覆盖默认 suggestion(agent 可执行的下一步)
+    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestion = Some(suggestion.into());
         self
     }
 
@@ -157,7 +166,7 @@ impl AppError {
             "status": "error",
             "code": self.code.as_str(),
             "message": self.message,
-            "suggestion": self.code.suggestion(),
+            "suggestion": self.suggestion.clone().unwrap_or_else(|| self.code.suggestion().to_string()),
         });
         if let Some(d) = &self.detail {
             v["detail"] = serde_json::json!(d);
@@ -195,6 +204,7 @@ impl From<anyhow::Error> for AppError {
                 message: ae.message.clone(),
                 detail: ae.detail.clone(),
                 module: ae.module.clone(),
+                suggestion: ae.suggestion.clone(),
                 source: None,
             };
         }
@@ -268,6 +278,21 @@ mod tests {
         assert_eq!(json["module"], "jira");
         assert_eq!(json["detail"], "HTTP [401] Basic auth failure");
         assert!(!json["suggestion"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_suggestion_override() {
+        let e = AppError::param_invalid("写操作需要显式确认")
+            .with_suggestion("确认执行请追加 --confirm;仅预览请追加 --dry-run");
+        let json = e.to_json();
+        assert_eq!(
+            json["suggestion"],
+            "确认执行请追加 --confirm;仅预览请追加 --dry-run"
+        );
+
+        // 无 override 时回退到 code 默认建议
+        let e2 = AppError::param_invalid("x");
+        assert!(e2.to_json()["suggestion"].as_str().unwrap().contains("--help"));
     }
 
     #[test]
