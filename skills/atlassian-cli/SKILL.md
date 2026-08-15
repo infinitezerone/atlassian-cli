@@ -42,6 +42,19 @@ atlassian-cli jira search "project = PROJ" --fields summary,status,assignee
 atlassian-cli jira search "project = PROJ" --limit 50 --start-at 0
 ```
 
+**Before composing a JQL query, resolve real field names & values — never guess:**
+
+```bash
+# List all available JQL fields & functions (official autocompletedata API)
+atlassian-cli jira suggest-fields
+
+# Resolve candidate values for a field (users, projects, statuses, versions...)
+atlassian-cli jira suggest-values --field assignee --query "John"
+```
+
+- Use the `value` from `suggest-values` results inside the JQL string.
+- Malformed JQL (unbalanced parens, unclosed quotes, empty query) is rejected **locally** with `PARAM_INVALID` (exit 2) plus a fix suggestion, before any request is sent.
+
 ### Add Comment to Issue
 ```bash
 atlassian-cli jira comment PROJ-123 "Analysis completed. Pending code review." --confirm
@@ -74,6 +87,19 @@ atlassian-cli jira user "John"
 atlassian-cli jira assign PROJ-123 john.doe --confirm
 ```
 
+### Mentions (@) — Always resolve before writing
+
+```bash
+# Resolve the real mention_syntax for a person FIRST (never hand-write @names)
+atlassian-cli jira user "John"          # returns mention_syntax: [~john.doe]
+
+# Then use it in comments / descriptions
+atlassian-cli jira comment PROJ-123 "Please review, thanks [~john.doe]" --confirm
+```
+
+- Broken mention syntax (`[~john doe]`, `[~]`, unclosed `[~...`) is rejected with `PARAM_INVALID` (exit 2) and a pointer to `jira user`.
+- Bare `@` text is left untouched (it's plain text in Jira, not a mention).
+
 ### Transitions, Links & Attachments
 ```bash
 # Inspect all available status transitions (avoid guessing transition names!)
@@ -92,7 +118,9 @@ atlassian-cli jira attach PROJ-123 ./crash.log --confirm
 ### Worklog & Time Tracking
 ```bash
 # Log time spent on an issue (supports "2h 30m", "1d", "45m", --comment, --started)
-atlassian-cli jira worklog-add PROJ-123 "2h 30m" --comment "Completed code review and unit tests" --confirm
+# time_spent units w/d/h/m validated (no repeats); --started accepts
+# "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SS" (month 1-12, day 1-31)
+atlassian-cli jira worklog-add PROJ-123 "2h 30m" --comment "Completed code review and unit tests" --started "2026-08-15T09:30:00" --confirm
 
 # List worklog entries on an issue
 atlassian-cli jira worklog-list PROJ-123
@@ -259,3 +287,28 @@ atlassian-cli schema jira comment     # single command with args
 ```
 
 Returns `name` / `about` / `args` (long, short, required, default, global) / `subcommands` for each node. Unknown paths return `NOT_FOUND` (exit 20).
+
+
+## 8. Idempotent Writes (AI Retry Safety)
+
+Identical write requests (same method + path + body) are automatically deduplicated within a window (default **300 seconds**) using `~/.atlassian-cli/idempotency.jsonl`. If the same write was already executed, the CLI **skips the request** and returns:
+
+```json
+{"status":"idempotent_replay","action":"skipped","method":"POST","path":"/rest/api/2/issue/PROJ-123/comment","matched_at":1786809936,"hint":"窗口期内已执行过相同写操作,已跳过..."}
+```
+
+- **Exit code 0 — treat as success, do NOT retry.**
+- If a retry is genuinely required: `ATLASSIAN_CLI_FORCE_WRITE=1` bypasses the dedupe.
+- Adjust the window: `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW=<seconds>` (0 disables).
+- Multipart uploads (`attach`) are excluded from dedupe.
+
+## 9. Audit Trail (What Was Changed)
+
+Every successful write op (and every idempotent replay) is appended to `~/.atlassian-cli/audit.jsonl`: timestamp, method, path, status, `replayed` flag and a 200-char body preview. **Tokens never appear** (PAT lives in HTTP headers, never in bodies).
+
+```bash
+atlassian-cli audit               # last 20 entries, newest first
+atlassian-cli audit --limit 50
+```
+
+Use it to verify what the AI actually changed and when. Entries marked `"replayed": true` were deduplicated writes that did NOT hit the server.
