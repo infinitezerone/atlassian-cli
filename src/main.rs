@@ -5,13 +5,14 @@ mod error;
 mod http;
 mod jira;
 mod module;
+mod schema;
 mod security;
 mod skill;
 mod utils;
 
 use std::process::exit;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use error::AppError;
@@ -82,6 +83,11 @@ enum Commands {
     Skill {
         #[command(subcommand)]
         action: Option<SkillSubActions>,
+    },
+    /// 输出机器可读的命令树 JSON (供 AI Agent 运行时自省),支持子路径过滤,如: schema jira comment
+    Schema {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
     },
 }
 
@@ -216,6 +222,7 @@ async fn main() {
                 SkillSubActions::Status => skill::skill_status(),
             }
         }
+        Commands::Schema { command } => schema::render(&Cli::command(), &command),
     };
 
     match result {
