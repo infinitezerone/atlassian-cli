@@ -125,13 +125,13 @@ impl Jira {
     pub async fn add_comment(&self, key_or_url: &str, text: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
-        let raw = self
-            .http
-            .post(
-                &format!("/rest/api/2/issue/{}/comment", enc_key),
-                json!({ "body": text }),
-            )
-            .await?;
+        let path = format!("/rest/api/2/issue/{}/comment", enc_key);
+        let body = json!({ "body": text });
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.comment", "POST", &path, &key, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.post(&path, body).await?;
         Ok(json!({
             "status": "success",
             "issue": key,
@@ -144,6 +144,20 @@ impl Jira {
     pub async fn transition(&self, key_or_url: &str, status: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let enc_key = urlencoding::encode(&key);
+        let path = format!("/rest/api/2/issue/{}/transitions", enc_key);
+        if self.policy.dry_run {
+            // 不预发 GET 查询 transition id,仅展示意图
+            let intent = json!({ "transition": { "status": status } });
+            return Ok(crate::module::preview_json(
+                "jira.transition",
+                "POST",
+                &path,
+                &key,
+                Some(&intent),
+                Some("只读预览:将以目标状态名实时解析 transition id,未真正执行。确认执行请追加 --confirm"),
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         let meta = self
             .http
             .get(&format!("/rest/api/2/issue/{}/transitions", enc_key))
@@ -164,7 +178,7 @@ impl Jira {
 
         self.http
             .post(
-                &format!("/rest/api/2/issue/{}/transitions", enc_key),
+                &path,
                 json!({ "transition": { "id": trans_id } }),
             )
             .await?;
@@ -236,6 +250,10 @@ impl Jira {
         }
 
         let body = json!({ "fields": fields });
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.create", "POST", "/rest/api/2/issue", "(new issue)", Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post("/rest/api/2/issue", body).await?;
         let key = raw["key"].as_str().unwrap_or("").to_string();
 
@@ -282,9 +300,12 @@ impl Jira {
         }
 
         let body = json!({ "fields": fields });
-        self.http
-            .put(&format!("/rest/api/2/issue/{}", enc_key), body)
-            .await?;
+        let path = format!("/rest/api/2/issue/{}", enc_key);
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.update", "PUT", &path, &key, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        self.http.put(&path, body).await?;
 
         Ok(json!({
             "status": "success",
@@ -300,9 +321,12 @@ impl Jira {
         let clean_assignee = parse_username(assignee);
         let enc_key = urlencoding::encode(&key);
         let body = json!({ "name": clean_assignee });
-        self.http
-            .put(&format!("/rest/api/2/issue/{}/assignee", enc_key), body)
-            .await?;
+        let path = format!("/rest/api/2/issue/{}/assignee", enc_key);
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.assign", "PUT", &path, &key, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        self.http.put(&path, body).await?;
 
         Ok(json!({
             "status": "success",
@@ -441,6 +465,10 @@ impl Jira {
             }
         }
 
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.worklog-add", "POST", &path, &key, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post(&path, body).await?;
 
         Ok(json!({
@@ -497,6 +525,17 @@ impl Jira {
             urlencoding::encode(a.worklog_id.trim())
         );
 
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json(
+                "jira.worklog-delete",
+                "DELETE",
+                &path,
+                a.worklog_id.trim(),
+                None,
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         self.http.delete(&path).await?;
 
         Ok(json!({
@@ -570,6 +609,18 @@ impl Jira {
             }
         }
 
+        if self.policy.dry_run {
+            let target = format!("{} -> {}", from_key, to_key);
+            return Ok(crate::module::preview_json(
+                "jira.link",
+                "POST",
+                "/rest/api/2/issueLink",
+                &target,
+                Some(&body),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         self.http.post("/rest/api/2/issueLink", body).await?;
 
         Ok(json!({
@@ -632,11 +683,27 @@ impl Jira {
             .unwrap_or("attachment")
             .to_string();
 
+        let endpoint = format!("/rest/api/2/issue/{}/attachments", urlencoding::encode(&key));
+
+        if self.policy.dry_run {
+            // 预览仅展示文件名与大小,不读取文件内容
+            let size = path_obj.metadata().map(|m| m.len()).unwrap_or(0);
+            let body = json!({ "files": [format!("{} ({} bytes)", file_name, size)] });
+            return Ok(crate::module::preview_json(
+                "jira.attach",
+                "POST(multipart)",
+                &endpoint,
+                &key,
+                Some(&body),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
         let file_bytes = tokio::fs::read(path_obj).await?;
         let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
         let form = reqwest::multipart::Form::new().part("file", part);
 
-        let endpoint = format!("/rest/api/2/issue/{}/attachments", urlencoding::encode(&key));
         let raw = self.http.post_multipart(&endpoint, form).await?;
 
         Ok(json!({

@@ -38,9 +38,6 @@ pub struct UpdatePageArgs {
     /// 在页面最顶端插入的内容 (不改变原页面任何旧排版与宏)
     #[arg(long)]
     pub prepend: Option<String>,
-    /// 只读预览 Diff，不真正提交修改到 Confluence (默认为 false)
-    #[arg(long, default_value_t = false)]
-    pub dry_run: bool,
 }
 
 /// Confluence 模块的 CLI 子命令

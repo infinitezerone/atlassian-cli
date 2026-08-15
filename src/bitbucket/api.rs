@@ -28,7 +28,8 @@ impl Bitbucket {
         let mut reviewer_names: Vec<String> = Vec::new();
 
         // 1. 自动尝试从网页端的 default-reviewers conditions 获取预设 Reviewer (按源分支与目标分支精确过滤)
-        if !a.no_default_reviewers {
+        //    dry-run 模式跳过该只读探测,预览中注明"将自动加载网页预设"
+        if !a.no_default_reviewers && !self.policy.dry_run {
             let cond_path = format!(
                 "/rest/default-reviewers/1.0/projects/{}/repos/{}/conditions",
                 urlencoding::encode(&a.project),
@@ -77,6 +78,24 @@ impl Bitbucket {
             "toRef": { "id": format!("refs/heads/{}", a.to) },
             "reviewers": reviewers_payload,
         });
+
+        let target = format!("{}/{}", a.project, a.repo);
+        if self.policy.dry_run {
+            let hint = if !a.no_default_reviewers {
+                Some("只读预览:网页预设 Reviewer 将在实际执行时自动加载。确认执行请追加 --confirm")
+            } else {
+                None
+            };
+            return Ok(crate::module::preview_json(
+                "bitbucket.create-pr",
+                "POST",
+                &path,
+                &target,
+                Some(&body),
+                hint,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
 
         let raw = self.http.post(&path, body).await?;
         let res_reviewers = raw["reviewers"]
@@ -311,6 +330,11 @@ impl Bitbucket {
             body["anchor"] = Value::Object(anchor);
         }
 
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("bitbucket.comment-pr", "POST", &path, &pr_id, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
         let raw = self.http.post(&path, body).await?;
 
         let anchor_info = if !raw["commentAnchor"].is_null() {
@@ -464,6 +488,17 @@ impl Bitbucket {
             urlencoding::encode(&repo),
             urlencoding::encode(&pr_id)
         );
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json(
+                "bitbucket.approve-pr",
+                "POST",
+                &path,
+                &pr_id,
+                Some(&json!({})),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post(&path, json!({})).await?;
 
         Ok(json!({
