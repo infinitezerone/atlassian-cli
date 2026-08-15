@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::config::Config;
 use crate::error::AppError;
@@ -26,6 +26,39 @@ impl WritePolicy {
     }
 }
 
+/// 写操作确认门禁:未显式确认则拒绝执行(报 PARAM_INVALID, exit 2)。
+pub fn require_confirmed(policy: &WritePolicy) -> Result<(), AppError> {
+    if policy.confirm {
+        Ok(())
+    } else {
+        Err(AppError::param_invalid("写操作需要显式确认")
+            .with_detail("确认执行请追加 --confirm;仅预览请追加 --dry-run"))
+    }
+}
+
+/// 构造统一的写操作 dry-run 预览 JSON(零副作用)。
+pub fn preview_json(
+    action: &str,
+    method: &str,
+    path: &str,
+    target: &str,
+    body: Option<&Value>,
+    hint: Option<&str>,
+) -> Value {
+    let mut v = json!({
+        "status": "dry_run",
+        "action": action,
+        "method": method,
+        "path": path,
+        "target": target,
+    });
+    if let Some(b) = body {
+        v["body"] = b.clone();
+    }
+    v["hint"] = json!(hint.unwrap_or("只读预览,未真正执行。确认执行请追加 --confirm"));
+    v
+}
+
 /// 所有 Atlassian 产品模块的统一契约。
 ///
 /// 一个模块 = 一个产品(Jira / Confluence / Bitbucket / 未来的 Bamboo / StatusPage…),
@@ -50,6 +83,7 @@ pub trait AtlassianModule: Sized {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorCode;
 
     #[test]
     fn test_write_policy_from_flags() {
@@ -74,5 +108,47 @@ mod tests {
         }
         let p2 = WritePolicy::from_flags(false, false);
         assert!(!p2.confirm);
+    }
+
+    #[test]
+    fn test_require_confirmed() {
+        let ok = WritePolicy {
+            dry_run: false,
+            confirm: true,
+        };
+        assert!(require_confirmed(&ok).is_ok());
+
+        let denied = WritePolicy {
+            dry_run: false,
+            confirm: false,
+        };
+        let e = require_confirmed(&denied).unwrap_err();
+        assert_eq!(e.code, ErrorCode::ParamInvalid);
+        assert_eq!(e.code.exit_code(), 2);
+        assert!(e.detail.as_deref().unwrap().contains("--confirm"));
+    }
+
+    #[test]
+    fn test_preview_json_structure() {
+        let body = json!({ "text": "hello" });
+        let v = preview_json(
+            "jira.comment",
+            "POST",
+            "/rest/api/2/issue/PROJ-1/comment",
+            "PROJ-1",
+            Some(&body),
+            None,
+        );
+        assert_eq!(v["status"], "dry_run");
+        assert_eq!(v["action"], "jira.comment");
+        assert_eq!(v["method"], "POST");
+        assert_eq!(v["path"], "/rest/api/2/issue/PROJ-1/comment");
+        assert_eq!(v["target"], "PROJ-1");
+        assert_eq!(v["body"], body);
+        assert!(v["hint"].as_str().unwrap().contains("--confirm"));
+
+        let v2 = preview_json("x", "DELETE", "/p", "t", None, Some("custom hint"));
+        assert!(v2.get("body").is_none());
+        assert_eq!(v2["hint"], "custom hint");
     }
 }

@@ -328,6 +328,22 @@ impl Confluence {
             .unwrap_or("attachment")
             .to_string();
 
+        let endpoint = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
+
+        if self.policy.dry_run {
+            let size = path_obj.metadata().map(|m| m.len()).unwrap_or(0);
+            let body = json!({ "files": [format!("{} ({} bytes)", file_name, size)] });
+            return Ok(crate::module::preview_json(
+                "confluence.attach",
+                "POST(multipart)",
+                &endpoint,
+                &id,
+                Some(&body),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
         let file_bytes = tokio::fs::read(path_obj).await?;
         let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
         let mut form = reqwest::multipart::Form::new().part("file", part);
@@ -339,7 +355,6 @@ impl Confluence {
             }
         }
 
-        let endpoint = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
         let raw = self.http.post_multipart(&endpoint, form).await?;
 
         Ok(json!({
@@ -370,6 +385,18 @@ impl Confluence {
             let clean_parent = parse_confluence_id(parent_id);
             body_json["ancestors"] = json!([{ "id": clean_parent }]);
         }
+
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json(
+                "confluence.create",
+                "POST",
+                "/rest/api/content",
+                &a.title,
+                Some(&body_json),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
 
         let raw = self.http.post("/rest/api/content", body_json).await?;
         let page_id = raw["id"].as_str().unwrap_or("").to_string();
@@ -449,11 +476,15 @@ impl Confluence {
             ));
         };
 
-        // 3. 若为 dry_run 只读预览模式
-        if a.dry_run {
+        // 3. 若为 dry_run 只读预览模式 (全局 --dry-run)
+        if self.policy.dry_run {
             return Ok(json!({
-                "status": "dry_run_preview",
-                "id": id,
+                "status": "dry_run",
+                "action": "confluence.update",
+                "method": "PUT",
+                "path": path.clone(),
+                "target": id.clone(),
+                "id": id.clone(),
                 "title": new_title,
                 "current_version": orig_version,
                 "next_version": orig_version + 1,
@@ -462,9 +493,12 @@ impl Confluence {
                 "replace_target": a.replace,
                 "orig_chars": orig_html.chars().count(),
                 "new_chars": new_html.chars().count(),
-                "hint": "只读预览完成。未真正提交修改。去掉 --dry-run 标志以保存修改至 Confluence。"
+                "hint": "只读预览,未真正提交修改。确认执行请追加 --confirm"
             }));
         }
+
+        // 3.5 写操作确认门禁
+        crate::module::require_confirmed(&self.policy)?;
 
         // 4. 提交版本更新 PUT 请求
         let put_body = json!({

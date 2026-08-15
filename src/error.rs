@@ -114,15 +114,18 @@ impl AppError {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_source(mut self, src: anyhow::Error) -> Self {
         self.source = Some(src);
         self
     }
 
     // ---- 语义化构造器 ----
+    #[allow(dead_code)]
     pub fn auth_expired(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::AuthExpired, msg)
     }
+    #[allow(dead_code)]
     pub fn permission_denied(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::PermissionDenied, msg)
     }
@@ -143,6 +146,7 @@ impl AppError {
     }
 
     /// 转为 anyhow 错误(供 `?` 链上传播)
+    #[allow(dead_code)]
     pub fn into_anyhow(self) -> anyhow::Error {
         anyhow::Error::new(self)
     }
