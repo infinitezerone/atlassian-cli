@@ -83,25 +83,40 @@ impl HttpClient {
         Self::parse(res).await
     }
 
-    /// 发起 POST 请求
+    /// 发起 POST 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn post(&self, path: &str, body: Value) -> Result<Value, AppError> {
+        if let Some(matched) = crate::idempotency::check("POST", path, Some(&body)) {
+            return Ok(crate::idempotency::replay_response(&matched));
+        }
         let url = self.url(path);
         let res = self.client.post(&url).json(&body).send().await?;
-        Self::parse(res).await
+        let out = Self::parse(res).await?;
+        crate::idempotency::record("POST", path, Some(&body));
+        Ok(out)
     }
 
-    /// 发起 PUT 请求
+    /// 发起 PUT 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn put(&self, path: &str, body: Value) -> Result<Value, AppError> {
+        if let Some(matched) = crate::idempotency::check("PUT", path, Some(&body)) {
+            return Ok(crate::idempotency::replay_response(&matched));
+        }
         let url = self.url(path);
         let res = self.client.put(&url).json(&body).send().await?;
-        Self::parse(res).await
+        let out = Self::parse(res).await?;
+        crate::idempotency::record("PUT", path, Some(&body));
+        Ok(out)
     }
 
-    /// 发起 DELETE 请求
+    /// 发起 DELETE 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn delete(&self, path: &str) -> Result<Value, AppError> {
+        if let Some(matched) = crate::idempotency::check("DELETE", path, None) {
+            return Ok(crate::idempotency::replay_response(&matched));
+        }
         let url = self.url(path);
         let res = self.client.delete(&url).send().await?;
-        Self::parse(res).await
+        let out = Self::parse(res).await?;
+        crate::idempotency::record("DELETE", path, None);
+        Ok(out)
     }
 
     /// 发起带文件上传的 Multipart POST 请求 (自动添加 X-Atlassian-Token: nocheck)

@@ -3,6 +3,7 @@ mod config;
 mod confluence;
 mod error;
 mod http;
+mod idempotency;
 mod jira;
 mod module;
 mod schema;

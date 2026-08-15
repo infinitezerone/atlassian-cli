@@ -135,6 +135,9 @@ impl Jira {
         }
         crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
         Ok(json!({
             "status": "success",
             "issue": key,
@@ -179,12 +182,16 @@ impl Jira {
             .and_then(|t| t["id"].as_str())
             .ok_or_else(|| AppError::not_found(format!("未找到匹配的状态: '{}'。请检查可用流转状态名", status)))?;
 
-        self.http
+        let raw = self
+            .http
             .post(
                 &path,
                 json!({ "transition": { "id": trans_id } }),
             )
             .await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
@@ -370,6 +377,9 @@ impl Jira {
         }
         crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post("/rest/api/2/issue", body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
         let key = raw["key"].as_str().unwrap_or("").to_string();
 
         Ok(json!({
@@ -421,7 +431,10 @@ impl Jira {
             return Ok(crate::module::preview_json("jira.update", "PUT", &path, &key, Some(&body), None));
         }
         crate::module::require_confirmed(&self.policy)?;
-        self.http.put(&path, body).await?;
+        let raw = self.http.put(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
@@ -442,7 +455,10 @@ impl Jira {
             return Ok(crate::module::preview_json("jira.assign", "PUT", &path, &key, Some(&body), None));
         }
         crate::module::require_confirmed(&self.policy)?;
-        self.http.put(&path, body).await?;
+        let raw = self.http.put(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
@@ -599,6 +615,9 @@ impl Jira {
         }
         crate::module::require_confirmed(&self.policy)?;
         let raw = self.http.post(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
@@ -665,7 +684,10 @@ impl Jira {
             ));
         }
         crate::module::require_confirmed(&self.policy)?;
-        self.http.delete(&path).await?;
+        let raw = self.http.delete(&path).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
@@ -750,7 +772,10 @@ impl Jira {
             ));
         }
         crate::module::require_confirmed(&self.policy)?;
-        self.http.post("/rest/api/2/issueLink", body).await?;
+        let raw = self.http.post("/rest/api/2/issueLink", body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
 
         Ok(json!({
             "status": "success",
