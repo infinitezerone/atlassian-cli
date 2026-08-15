@@ -479,23 +479,25 @@ impl Confluence {
 
         // 3. 若为 dry_run 只读预览模式 (全局 --dry-run)
         if self.policy.dry_run {
-            return Ok(json!({
-                "status": "dry_run",
-                "action": "confluence.update",
-                "method": "PUT",
-                "path": path.clone(),
-                "target": id.clone(),
-                "id": id.clone(),
-                "title": new_title,
-                "current_version": orig_version,
-                "next_version": orig_version + 1,
-                "mode": mode_desc,
-                "find_target": a.find,
-                "replace_target": a.replace,
-                "orig_chars": orig_html.chars().count(),
-                "new_chars": new_html.chars().count(),
-                "hint": "只读预览,未真正提交修改。确认执行请追加 --confirm"
-            }));
+            let mut v = crate::module::preview_json(
+                "confluence.update",
+                "PUT",
+                &path,
+                &id,
+                Some(&json!({ "mode": mode_desc })),
+                Some("只读预览,未真正提交修改。确认执行请追加 --confirm"),
+            );
+            // 扩展:更新类预览附带 diff 细节字段
+            v["id"] = json!(id.clone());
+            v["title"] = json!(new_title);
+            v["current_version"] = json!(orig_version);
+            v["next_version"] = json!(orig_version + 1);
+            v["mode"] = json!(mode_desc);
+            v["find_target"] = json!(a.find.as_deref());
+            v["replace_target"] = json!(a.replace.as_deref());
+            v["orig_chars"] = json!(orig_html.chars().count());
+            v["new_chars"] = json!(new_html.chars().count());
+            return Ok(v);
         }
 
         // 3.5 写操作确认门禁

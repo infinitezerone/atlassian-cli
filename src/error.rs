@@ -123,18 +123,10 @@ impl AppError {
         self
     }
 
-    #[allow(dead_code)]
-    pub fn with_source(mut self, src: anyhow::Error) -> Self {
-        self.source = Some(src);
-        self
-    }
-
     // ---- 语义化构造器 ----
-    #[allow(dead_code)]
     pub fn auth_expired(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::AuthExpired, msg)
     }
-    #[allow(dead_code)]
     pub fn permission_denied(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::PermissionDenied, msg)
     }
@@ -152,12 +144,6 @@ impl AppError {
     }
     pub fn generic(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Generic, msg)
-    }
-
-    /// 转为 anyhow 错误(供 `?` 链上传播)
-    #[allow(dead_code)]
-    pub fn into_anyhow(self) -> anyhow::Error {
-        anyhow::Error::new(self)
     }
 
     /// 输出错误 JSON(供 main.rs 收口)
@@ -304,7 +290,7 @@ mod tests {
     #[test]
     fn test_from_anyhow_recovers_app_error() {
         let original = AppError::permission_denied("权限拒绝");
-        let anyhow_err: anyhow::Error = original.into_anyhow();
+        let anyhow_err: anyhow::Error = anyhow::Error::new(original);
         let back: AppError = anyhow_err.into();
         assert_eq!(back.code, ErrorCode::PermissionDenied);
         assert_eq!(back.message, "权限拒绝");

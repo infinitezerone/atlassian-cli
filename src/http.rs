@@ -6,7 +6,7 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde_json::Value;
 
-use crate::error::{AppError, ErrorCode};
+use crate::error::AppError;
 
 /// 统一 HTTP 客户端: 封装 3 次指数退避重试 (reqwest-retry)、5s 建连超时、Bearer Token 认证与 URL Query 编码抽象
 pub struct HttpClient {
@@ -72,8 +72,7 @@ impl HttpClient {
         if status.is_success() {
             Ok(text)
         } else {
-            let cleaned = crate::security::sanitize_external_text(&text.chars().take(300).collect::<String>());
-            Err(classify_http_error(status, &cleaned))
+            Err(classify_http_error(status))
         }
     }
 
@@ -155,7 +154,7 @@ impl HttpClient {
                     crate::security::sanitize_external_text(&text.chars().take(300).collect::<String>())
                 });
 
-            let mut err = classify_http_error(status, &server_msg);
+            let mut err = classify_http_error(status);
             if !server_msg.is_empty() {
                 let detail = match status.as_u16() {
                     401 => "认证失败: PAT Token 无效或已过期",
@@ -173,49 +172,43 @@ impl HttpClient {
 }
 
 /// 纯函数:HTTP 状态码 -> 结构化错误(供 parse/get_text 共用,便于单测)
-pub(crate) fn classify_http_error(status: reqwest::StatusCode, _server_msg: &str) -> AppError {
-    let (code, detail) = match status.as_u16() {
-        401 => (ErrorCode::AuthExpired, "认证失败: PAT Token 无效或已过期"),
-        403 => (ErrorCode::PermissionDenied, "权限拒绝: 当前 Token 无权访问该资源"),
-        404 => (
-            ErrorCode::NotFound,
-            "资源未找到: 请检查 API 路径或 Base URL 是否包含正确前缀 (如 /jira 或 /confluence)",
-        ),
-        _ => (ErrorCode::HttpError, ""),
-    };
-    let message = if detail.is_empty() {
-        format!("HTTP [{}] 请求失败", status)
-    } else {
-        format!("HTTP [{}] {}", status, detail)
-    };
-    AppError::new(code, message)
+pub(crate) fn classify_http_error(status: reqwest::StatusCode) -> AppError {
+    match status.as_u16() {
+        401 => AppError::auth_expired(format!("HTTP [401] 认证失败: PAT Token 无效或已过期")),
+        403 => AppError::permission_denied(format!("HTTP [403] 权限拒绝: 当前 Token 无权访问该资源")),
+        404 => AppError::not_found(format!(
+            "HTTP [404] 资源未找到: 请检查 API 路径或 Base URL 是否包含正确前缀 (如 /jira 或 /confluence)"
+        )),
+        code => AppError::http_error(format!("HTTP [{}] 请求失败", code)),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorCode;
     use reqwest::StatusCode;
 
     #[test]
     fn test_classify_http_error_mapping() {
-        let e = classify_http_error(StatusCode::UNAUTHORIZED, "");
+        let e = classify_http_error(StatusCode::UNAUTHORIZED);
         assert_eq!(e.code, ErrorCode::AuthExpired);
         assert_eq!(e.code.exit_code(), 10);
         assert!(e.message.contains("401"));
 
-        let e = classify_http_error(StatusCode::FORBIDDEN, "");
+        let e = classify_http_error(StatusCode::FORBIDDEN);
         assert_eq!(e.code, ErrorCode::PermissionDenied);
         assert_eq!(e.code.exit_code(), 11);
 
-        let e = classify_http_error(StatusCode::NOT_FOUND, "");
+        let e = classify_http_error(StatusCode::NOT_FOUND);
         assert_eq!(e.code, ErrorCode::NotFound);
         assert_eq!(e.code.exit_code(), 20);
 
-        let e = classify_http_error(StatusCode::INTERNAL_SERVER_ERROR, "");
+        let e = classify_http_error(StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(e.code, ErrorCode::HttpError);
         assert_eq!(e.code.exit_code(), 1);
 
-        let e = classify_http_error(StatusCode::TOO_MANY_REQUESTS, "");
+        let e = classify_http_error(StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(e.code, ErrorCode::HttpError);
     }
 }
