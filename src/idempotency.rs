@@ -1,21 +1,19 @@
 use serde_json::{json, Value};
 
-use crate::config;
-
 /// 幂等写操作:窗口期内,相同的写请求 (method + path + body) 只真正执行一次。
 ///
 /// AI 重试/超时重放是常见场景——第一次已成功但结果丢失,重试会重复提交
 /// (重复评论/重复工时)。在 HttpClient 的 post/put/delete 出口统一拦截:
 /// 命中时返回 `idempotent_replay`(exit 0,视为成功,无副作用)。
 ///
+/// 记录复用审计日志(每条审计记录携带 hash 指纹,见 audit.rs),**不写
+/// 独立的幂等文件**——每个写操作只有一次磁盘追加,减少 IO 次数。
+///
 /// 配置:
 /// - `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` 窗口秒数(默认 300,0 = 关闭)
 /// - `ATLASSIAN_CLI_FORCE_WRITE=1` 强制绕过(存量脚本/CI 迁移期用)
-/// - `ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES` 文件超限(默认 512KB)时自动
-///   裁剪为只保留窗口期内的记录,避免无界增长(窗口外的记录本就无用)
 
 const DEFAULT_WINDOW_SECS: u64 = 300;
-const DEFAULT_MAX_BYTES: u64 = 512 * 1024;
 
 /// FNV-1a 64 位哈希(零依赖,跨进程稳定,足够去重场景)
 fn fnv1a(data: &[u8]) -> u64 {
@@ -54,102 +52,14 @@ fn forced() -> bool {
         .unwrap_or(false)
 }
 
-fn max_bytes() -> u64 {
-    std::env::var("ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(DEFAULT_MAX_BYTES)
-}
-
-fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-fn log_path() -> std::path::PathBuf {
-    config::config_dir().join("idempotency.jsonl")
-}
-
-/// 检查窗口期内是否执行过相同写请求;命中返回匹配记录(供 replay_response)。
+/// 检查窗口期内是否执行过相同写请求(查询审计日志,不产生独立落盘);
+/// 命中返回匹配记录(供 replay_response)。
 pub fn check(method: &str, path: &str, body: Option<&Value>) -> Option<Value> {
-    check_in(&log_path(), method, path, body)
-}
-
-/// 写操作成功后记录指纹(文件不可写时静默忽略,不影响主流程)。
-pub fn record(method: &str, path: &str, body: Option<&Value>) {
-    record_in(&log_path(), method, path, body);
-}
-
-fn check_in(
-    log: &std::path::Path,
-    method: &str,
-    path: &str,
-    body: Option<&Value>,
-) -> Option<Value> {
     let window = window_secs();
     if window == 0 || forced() {
         return None;
     }
-    prune_if_needed(log, window);
-    let fp = fingerprint(method, path, body);
-    let content = std::fs::read_to_string(log).ok()?;
-    let now = now_secs();
-    for line in content.lines().rev() {
-        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
-        if v["method"] == method && v["path"] == path && v["hash"] == fp {
-            let ts = v["ts"].as_u64().unwrap_or(0);
-            if now.saturating_sub(ts) <= window {
-                return Some(v);
-            }
-        }
-    }
-    None
-}
-
-/// 幂等文件裁剪:超过阈值时重写为只保留窗口期内的记录。
-/// 窗口外的记录对去重毫无价值(反正不会命中),剪掉控制磁盘增长。
-/// 失败静默;重写非原子但量小(≤阈值,通常几十 KB),单进程 CLI 可接受。
-fn prune_if_needed(log: &std::path::Path, window: u64) {
-    let Ok(meta) = std::fs::metadata(log) else { return };
-    if meta.len() <= max_bytes() {
-        return;
-    }
-    let Ok(content) = std::fs::read_to_string(log) else { return };
-    let now = now_secs();
-    let mut kept: Vec<&str> = Vec::new();
-    for line in content.lines() {
-        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
-        let ts = v["ts"].as_u64().unwrap_or(0);
-        if now.saturating_sub(ts) <= window {
-            kept.push(line);
-        }
-    }
-    let mut data = kept.join("\n");
-    if !kept.is_empty() {
-        data.push('\n');
-    }
-    let _ = std::fs::write(log, data);
-}
-
-fn record_in(log: &std::path::Path, method: &str, path: &str, body: Option<&Value>) {
-    let entry = json!({
-        "ts": now_secs(),
-        "method": method,
-        "path": path,
-        "hash": fingerprint(method, path, body),
-    });
-    let mut line = entry.to_string();
-    line.push('\n');
-    if let Some(parent) = log.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+    crate::audit::replay_lookup(method, path, body, window)
 }
 
 /// 构造命中响应(HttpClient 直接返回,exit 0,视为成功无副作用)
@@ -170,17 +80,6 @@ mod tests {
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn tmp_dir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "atlassian-cli-idem-test-{}-{}",
-            tag,
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d.join("idempotency.jsonl")
-    }
-
     #[test]
     fn test_fingerprint_stable() {
         let body = json!({ "b": 1, "a": 2 });
@@ -197,56 +96,25 @@ mod tests {
     }
 
     #[test]
-    fn test_dedupe_roundtrip() {
-        let _g = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::remove_var("ATLASSIAN_CLI_FORCE_WRITE");
-            std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW", "300");
-        }
-        let log = tmp_dir("rt");
-        let body = json!({ "text": "hello" });
-
-        assert!(check_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&body)).is_none());
-        record_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&body));
-        let matched = check_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&body));
-        assert!(matched.is_some());
-        // 相同 body 不同 path 不命中
-        assert!(check_in(&log, "POST", "/rest/api/2/issue/PROJ-2/comment", Some(&body)).is_none());
-        // 相同 path 不同 body 不命中
-        assert!(check_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&json!({ "text": "other" }))).is_none());
-        // DELETE 无 body 独立
-        assert!(check_in(&log, "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", None).is_none());
-        record_in(&log, "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", None);
-        assert!(check_in(&log, "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", None).is_some());
-        let _ = std::fs::remove_file(&log);
-    }
-
-    #[test]
-    fn test_window_zero_disables() {
+    fn test_check_disabled_when_window_zero() {
         let _g = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::remove_var("ATLASSIAN_CLI_FORCE_WRITE");
             std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW", "0");
         }
-        let log = tmp_dir("w0");
         let body = json!({ "x": 1 });
-        record_in(&log, "POST", "/p", Some(&body));
-        assert!(check_in(&log, "POST", "/p", Some(&body)).is_none()); // 窗口为 0 视为关闭
-        let _ = std::fs::remove_file(&log);
+        assert!(check("POST", "/p", Some(&body)).is_none()); // 窗口 0 = 关闭,不查询
     }
 
     #[test]
-    fn test_force_write_bypasses() {
+    fn test_check_forced_bypasses() {
         let _g = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("ATLASSIAN_CLI_FORCE_WRITE", "1");
             std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW", "300");
         }
-        let log = tmp_dir("fw");
         let body = json!({ "x": 1 });
-        record_in(&log, "POST", "/p", Some(&body));
-        assert!(check_in(&log, "POST", "/p", Some(&body)).is_none()); // 强制绕过
-        let _ = std::fs::remove_file(&log);
+        assert!(check("POST", "/p", Some(&body)).is_none()); // 强制绕过,不查询
     }
 
     #[test]
@@ -257,30 +125,5 @@ mod tests {
         assert_eq!(v["action"], "skipped");
         assert_eq!(v["path"], "/x");
         assert!(v["hint"].as_str().unwrap().contains("FORCE_WRITE"));
-    }
-
-    #[test]
-    fn test_prune_removes_stale() {
-        let _g = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::remove_var("ATLASSIAN_CLI_FORCE_WRITE");
-            std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW", "300");
-            std::env::set_var("ATLASSIAN_CLI_IDEMPOTENCY_MAX_BYTES", "100");
-        }
-        let log = tmp_dir("prune");
-        let now = now_secs();
-        // 手写两条:一条过期(窗口外),一条新鲜
-        let stale = json!({ "ts": now - 1000, "method": "POST", "path": "/stale", "hash": "aaaa" });
-        let fresh = json!({ "ts": now, "method": "POST", "path": "/fresh", "hash": "bbbb" });
-        std::fs::write(&log, format!("{}\n{}\n", stale, fresh)).unwrap();
-        assert!(std::fs::metadata(&log).unwrap().len() > 100);
-
-        // check 触发裁剪(hash 不匹配,返回 None,但文件已被重写)
-        assert!(check_in(&log, "POST", "/fresh", Some(&json!({ "x": 1 }))).is_none());
-
-        let content = std::fs::read_to_string(&log).unwrap();
-        assert!(!content.contains("/stale"), "窗口外的记录应被裁剪");
-        assert!(content.contains("/fresh"), "窗口内的记录应保留");
-        let _ = std::fs::remove_file(&log);
     }
 }

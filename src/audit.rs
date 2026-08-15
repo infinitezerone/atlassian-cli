@@ -51,6 +51,9 @@ fn body_preview(body: Option<&Value>) -> String {
 }
 
 /// 追加一条审计记录(文件不可写时静默忽略,不影响主流程)。
+///
+/// 记录同时携带 `hash`(幂等指纹):幂等查询直接读本文件,无需独立的
+/// 幂等日志文件——每个写操作只落盘 1 次,减少磁盘 IO 次数与文件数。
 pub fn append(method: &str, path: &str, status: &str, body: Option<&Value>, replayed: bool) {
     append_in(&audit_path(), method, path, status, body, replayed);
 }
@@ -70,6 +73,7 @@ fn append_in(
         "path": path,
         "status": status,
         "replayed": replayed,
+        "hash": crate::idempotency::fingerprint(method, path, body),
         "body_preview": body_preview(body),
     });
     let mut line = entry.to_string();
@@ -82,6 +86,49 @@ fn append_in(
         .append(true)
         .open(log)
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+}
+
+/// 幂等查询:在主审计日志(+滚动备份)中倒序查找窗口期内相同写请求。
+///
+/// 追加顺序即时间顺序,倒序遍历遇到第一条超出窗口的记录即可停止
+/// (更早的更旧),所以只扫描文件尾部一小段,不会全文件扫描。
+pub(crate) fn replay_lookup(
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+    window: u64,
+) -> Option<Value> {
+    let main = audit_path();
+    let backup = main.with_extension("1.jsonl");
+    replay_lookup_in(&[&main, &backup], method, path, body, window)
+}
+
+fn replay_lookup_in(
+    logs: &[&std::path::Path],
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+    window: u64,
+) -> Option<Value> {
+    let fp = crate::idempotency::fingerprint(method, path, body);
+    let now = now_secs();
+    for log in logs {
+        let Ok(content) = std::fs::read_to_string(log) else { continue };
+        for line in content.lines().rev() {
+            let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+            let ts = match v["ts"].as_u64() {
+                Some(t) => t,
+                None => continue,
+            };
+            if now.saturating_sub(ts) > window {
+                break; // 更早的记录更旧,窗口内不会再有
+            }
+            if v["method"] == method && v["path"] == path && v["hash"] == fp {
+                return Some(v);
+            }
+        }
+    }
+    None
 }
 
 /// 审计日志滚动:当前文件超过阈值时,归档为 `audit.1.jsonl`(覆盖旧备份)。
@@ -213,6 +260,69 @@ mod tests {
         unsafe {
             std::env::remove_var("ATLASSIAN_CLI_AUDIT_MAX_BYTES");
         }
+        let _ = std::fs::remove_dir_all(log.parent().unwrap());
+    }
+
+    #[test]
+    fn test_replay_lookup_matches_window() {
+        let log = tmp_log("rl");
+        let body = json!({ "text": "hello" });
+        append_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", "ok", Some(&body), false);
+        append_in(&log, "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", "ok", None, false);
+
+        let window = 300u64;
+        // 相同请求命中
+        assert!(replay_lookup_in(&[&log], "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&body), window).is_some());
+        // 不同 path 不命中
+        assert!(replay_lookup_in(&[&log], "POST", "/rest/api/2/issue/PROJ-2/comment", Some(&body), window).is_none());
+        // 不同 body 不命中
+        assert!(replay_lookup_in(&[&log], "POST", "/rest/api/2/issue/PROJ-1/comment", Some(&json!({ "text": "other" })), window).is_none());
+        // DELETE 无 body 独立命中
+        assert!(replay_lookup_in(&[&log], "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", None, window).is_some());
+        let _ = std::fs::remove_dir_all(log.parent().unwrap());
+    }
+
+    #[test]
+    fn test_replay_lookup_stops_at_window_boundary() {
+        let log = tmp_log("wb");
+        let now = now_secs();
+        // 手写一条窗口外的记录(在最前面)+ 一条窗口内的
+        let stale = json!({
+            "ts": now - 1000, "method": "POST", "path": "/old",
+            "status": "ok", "replayed": false,
+            "hash": crate::idempotency::fingerprint("POST", "/old", Some(&json!({ "a": 1 }))),
+            "body_preview": ""
+        });
+        let fresh = json!({
+            "ts": now, "method": "POST", "path": "/new",
+            "status": "ok", "replayed": false,
+            "hash": crate::idempotency::fingerprint("POST", "/new", Some(&json!({ "b": 2 }))),
+            "body_preview": ""
+        });
+        std::fs::write(&log, format!("{}\n{}\n", stale, fresh)).unwrap();
+
+        // 窗口外的旧记录不应被命中(倒序扫描到窗口边界即停止)
+        let window = 300u64;
+        assert!(replay_lookup_in(&[&log], "POST", "/old", Some(&json!({ "a": 1 })), window).is_none());
+        // 窗口内的新记录正常命中
+        assert!(replay_lookup_in(&[&log], "POST", "/new", Some(&json!({ "b": 2 })), window).is_some());
+        let _ = std::fs::remove_dir_all(log.parent().unwrap());
+    }
+
+    #[test]
+    fn test_replay_lookup_reads_backup_after_rotate() {
+        let log = tmp_log("bk");
+        let body = json!({ "x": 1 });
+        // 模拟滚动:主文件归档为备份,新主文件里没有这条记录
+        let backup = log.with_extension("1.jsonl");
+        append_in(&log, "POST", "/p", "ok", Some(&body), false);
+        let _ = std::fs::rename(&log, &backup);
+
+        let window = 300u64;
+        // 主文件缺失,但备份里有 → 应命中
+        assert!(replay_lookup_in(&[&log, &backup], "POST", "/p", Some(&body), window).is_some());
+        // 只给主文件则查不到
+        assert!(replay_lookup_in(&[&log], "POST", "/p", Some(&body), window).is_none());
         let _ = std::fs::remove_dir_all(log.parent().unwrap());
     }
 }
