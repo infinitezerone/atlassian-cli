@@ -8,11 +8,23 @@ use crate::error::AppError;
 /// 文件 `~/.atlassian-cli/audit.jsonl`,与 config.json 同目录。
 /// token 永不在其中(PAT 走 HTTP header,不经过 body)。正文摘要截断
 /// 200 字符;幂等回放的请求标记 `replayed: true`。
+///
+/// 磁盘保护:超过阈值(默认 5MB,`ATLASSIAN_CLI_AUDIT_MAX_BYTES` 可调)
+/// 自动滚动到 `audit.1.jsonl`(覆盖旧备份),磁盘占用上限约 2×阈值,
+/// 避免像无界日志那样长期运行挤爆磁盘。
 
 const BODY_PREVIEW_MAX: usize = 200;
+const DEFAULT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 fn audit_path() -> std::path::PathBuf {
     config::config_dir().join("audit.jsonl")
+}
+
+fn max_bytes() -> u64 {
+    std::env::var("ATLASSIAN_CLI_AUDIT_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MAX_BYTES)
 }
 
 fn now_secs() -> u64 {
@@ -51,6 +63,7 @@ fn append_in(
     body: Option<&Value>,
     replayed: bool,
 ) {
+    rotate_if_needed(log);
     let entry = json!({
         "ts": now_secs(),
         "method": method,
@@ -69,6 +82,18 @@ fn append_in(
         .append(true)
         .open(log)
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+}
+
+/// 审计日志滚动:当前文件超过阈值时,归档为 `audit.1.jsonl`(覆盖旧备份)。
+/// 失败静默(磁盘问题不应影响主流程)。
+fn rotate_if_needed(log: &std::path::Path) {
+    let Ok(meta) = std::fs::metadata(log) else { return };
+    if meta.len() <= max_bytes() {
+        return;
+    }
+    let backup = log.with_extension("1.jsonl");
+    let _ = std::fs::remove_file(&backup);
+    let _ = std::fs::rename(log, &backup);
 }
 
 /// 读取最近 N 条审计记录(倒序,最新的在前)。
@@ -100,6 +125,8 @@ fn read_in(log: &std::path::Path, limit: usize) -> Result<Value, AppError> {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn tmp_log(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!(
             "atlassian-cli-audit-test-{}-{}",
@@ -113,6 +140,7 @@ mod tests {
 
     #[test]
     fn test_append_and_read_roundtrip() {
+        let _g = ENV_LOCK.lock().unwrap();
         let log = tmp_log("rt");
         append_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", "ok", Some(&json!({ "body": "hello" })), false);
         append_in(&log, "DELETE", "/rest/api/2/issue/PROJ-1/worklog/42", "ok", None, false);
@@ -133,6 +161,7 @@ mod tests {
 
     #[test]
     fn test_read_missing_file_returns_empty() {
+        let _g = ENV_LOCK.lock().unwrap();
         let log = tmp_log("empty");
         let v = read_in(&log, 10).unwrap();
         assert_eq!(v["count"], 0);
@@ -141,6 +170,7 @@ mod tests {
 
     #[test]
     fn test_body_preview_truncates() {
+        let _g = ENV_LOCK.lock().unwrap();
         let long = "x".repeat(500);
         let p = body_preview(Some(&json!({ "text": long })));
         assert!(p.contains("truncated"));
@@ -153,9 +183,36 @@ mod tests {
 
     #[test]
     fn test_append_missing_dir_creates() {
+        let _g = ENV_LOCK.lock().unwrap();
         let log = tmp_log("mk").join("sub").join("audit.jsonl");
         append_in(&log, "POST", "/p", "ok", None, false);
         assert!(log.exists());
         let _ = std::fs::remove_dir_all(log.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn test_rotate_on_size_limit() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("ATLASSIAN_CLI_AUDIT_MAX_BYTES", "50");
+        }
+        let log = tmp_log("rot");
+        append_in(&log, "POST", "/p/1", "ok", None, false);
+        append_in(&log, "POST", "/p/2", "ok", None, false);
+
+        let backup = log.with_extension("1.jsonl");
+        assert!(backup.exists(), "应已滚动出备份文件");
+        let b = std::fs::read_to_string(&backup).unwrap();
+        assert!(b.contains("/p/1"), "备份应含第一条记录");
+        assert!(!b.contains("/p/2"), "备份不应含第二条记录");
+        let m = std::fs::read_to_string(&log).unwrap();
+        assert!(m.contains("/p/2"), "主文件应含最新记录");
+
+        // 滚动后主文件是全新文件,只含最新一条
+        assert_eq!(m.lines().count(), 1);
+        unsafe {
+            std::env::remove_var("ATLASSIAN_CLI_AUDIT_MAX_BYTES");
+        }
+        let _ = std::fs::remove_dir_all(log.parent().unwrap());
     }
 }
