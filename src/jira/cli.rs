@@ -112,6 +112,18 @@ pub enum JiraActions {
         #[arg(long, default_value_t = 10)]
         limit: u32,
     },
+    /// 查询 JQL 可用字段与函数 (官方 autocompletedata API) — 拼 JQL 前先查,避免拼错字段名
+    SuggestFields,
+    /// JQL 字段候选值补全 (如 --field assignee --query jo) — 避免拼错用户名/项目/状态等值
+    SuggestValues {
+        /// 字段名 (如 assignee / reporter / project / status / fixVersion)
+        field: String,
+        /// 模糊搜索关键字 (可选,不传返回热门值)
+        query: Option<String>,
+        /// 最多返回条数 (默认 10)
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
     /// 在单子上登记工作日志与工时 (支持 "2h 30m" / "1d" / "45m", --comment, --started)
     WorklogAdd(AddWorklogArgs),
     /// 查看单子上的历史工作日志与工时登记列表
