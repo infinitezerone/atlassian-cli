@@ -86,36 +86,42 @@ impl HttpClient {
     /// 发起 POST 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn post(&self, path: &str, body: Value) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("POST", path, Some(&body)) {
+            crate::audit::append("POST", path, "replayed", Some(&body), true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
         let res = self.client.post(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
         crate::idempotency::record("POST", path, Some(&body));
+        crate::audit::append("POST", path, "ok", Some(&body), false);
         Ok(out)
     }
 
     /// 发起 PUT 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn put(&self, path: &str, body: Value) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("PUT", path, Some(&body)) {
+            crate::audit::append("PUT", path, "replayed", Some(&body), true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
         let res = self.client.put(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
         crate::idempotency::record("PUT", path, Some(&body));
+        crate::audit::append("PUT", path, "ok", Some(&body), false);
         Ok(out)
     }
 
     /// 发起 DELETE 请求 (写操作:经幂等窗口去重,成功后记录)
     pub async fn delete(&self, path: &str) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("DELETE", path, None) {
+            crate::audit::append("DELETE", path, "replayed", None, true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
         let res = self.client.delete(&url).send().await?;
         let out = Self::parse(res).await?;
         crate::idempotency::record("DELETE", path, None);
+        crate::audit::append("DELETE", path, "ok", None, false);
         Ok(out)
     }
 
