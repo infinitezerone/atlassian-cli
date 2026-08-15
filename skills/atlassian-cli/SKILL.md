@@ -36,6 +36,10 @@ atlassian-cli jira get PROJ-123 --comments-limit 5
 ### Search Issues (JQL)
 ```bash
 atlassian-cli jira search "assignee = currentUser() AND status != Closed" --limit 10
+# Restrict returned fields to save tokens (comma-separated, '-' excludes)
+atlassian-cli jira search "project = PROJ" --fields summary,status,assignee
+# Paginate with --start-at (a hint field shows the next page offset)
+atlassian-cli jira search "project = PROJ" --limit 50 --start-at 0
 ```
 
 ### Add Comment to Issue

@@ -34,7 +34,9 @@ impl AtlassianModule for Jira {
             JiraActions::Get(a) => self.get_issue(&a).await,
             JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,
             JiraActions::Transition { key, status } => self.transition(&key, &status).await,
-            JiraActions::Search { jql, limit } => self.search_issues(&jql, limit).await,
+            JiraActions::Search { jql, limit, fields, start_at } => {
+                self.search_issues(&jql, limit, fields.as_deref(), start_at).await
+            }
             JiraActions::Create(a) => self.create_issue(&a).await,
             JiraActions::Update(a) => self.update_issue(&a).await,
             JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,

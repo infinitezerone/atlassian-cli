@@ -76,6 +76,12 @@ pub enum JiraActions {
         /// 最多返回条数 (默认 10)
         #[arg(long, default_value_t = 10)]
         limit: u32,
+        /// 逗号分隔的返回字段列表 (如 summary,status,assignee)，省 Token；支持 - 前缀排除
+        #[arg(long)]
+        fields: Option<String>,
+        /// 分页起始索引 (0-based)，与 --limit 配合翻页
+        #[arg(long, default_value_t = 0)]
+        start_at: u32,
     },
     /// 创建新 Jira 单子
     Create(CreateIssueArgs),
