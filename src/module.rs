@@ -85,8 +85,12 @@ mod tests {
     use super::*;
     use crate::error::ErrorCode;
 
+    /// 串行化涉及环境变量的测试,避免并行竞态
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_write_policy_from_flags() {
+        let _g = ENV_LOCK.lock().unwrap();
         let p = WritePolicy::from_flags(true, false);
         assert!(p.dry_run);
         assert!(!p.confirm);
@@ -98,6 +102,7 @@ mod tests {
 
     #[test]
     fn test_write_policy_env_escape_hatch() {
+        let _g = ENV_LOCK.lock().unwrap();
         unsafe {
             std::env::set_var("ATLASSIAN_CLI_ALLOW_UNCONFIRMED", "1");
         }

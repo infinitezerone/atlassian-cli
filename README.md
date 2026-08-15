@@ -85,13 +85,25 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | **Config** | `config set <module>` | Masked interactive Token configuration (`--stdin` for pipe input) |
 | | `config set-url <module> <URL>` | Update Base URL for a module |
 | | `config test` / `config status` | Verify connectivity & Token permissions |
+| **Introspect** | `schema [path...]` | Machine-readable command tree JSON for AI agents (e.g. `schema jira comment`) |
 
-*Note: For self-signed TLS certificates in enterprise environments, append `--insecure` (or `-k`), e.g., `atlassian-cli --insecure jira get PROJ-1`.*
+**Global Flags** (usable anywhere):
+
+| flag | meaning |
+| :--- | :--- |
+| `--dry-run` | Preview write operations as JSON (`status: dry_run`) without calling the API — zero side effects |
+| `--confirm` | Explicitly confirm write operations; **without it the CLI refuses to execute** (exit 2) |
+| `-k` / `--insecure` | Skip TLS certificate validation (MITM risk — only with user approval) |
+
+*Note: For self-signed TLS certificates in enterprise environments, prefer configuring the CA as trusted. If `--insecure` (or `-k`) must be used, only do so after informing the user that certificate validation is disabled.*
 
 ---
 
 ## 🔒 Security Principles
 
+- **Write-Operation Guard**: All 15 write operations require `--confirm`; `--dry-run` prints a preview first. `ATLASSIAN_CLI_ALLOW_UNCONFIRMED=1` is a migration-only escape hatch.
+- **Structured Errors**: Errors are JSON with `code` + `suggestion` + granular exit codes (2 param, 3 config, 10 auth, 11 permission, 20 not-found, 1 http/generic) — machine-actionable for agents.
+- **Prompt-Injection Defense**: Server-controlled text (descriptions, comments, page bodies, PR comments, diffs) is sanitized before output; modified responses carry `"sanitized": true`.
 - **POSIX Permissions**: Config file stored in `~/.atlassian-cli/config.json` with strict POSIX permissions (`0700` directory, `0600` file, readable only by owner).
 - **Zero-History Leakage**: Supports stdin pipe (`echo "PAT" | atlassian-cli config set <module> --stdin`) to prevent sensitive tokens from appearing in shell history or process lists.
 
