@@ -117,65 +117,65 @@ async fn probe_single_url(
 /// 探测已配置模块的网络连通性与 PAT 登录身份信息
 pub async fn test(cfg: &Config) -> Result<Value, AppError> {
     use std::io::Write;
-    println!("=== 正在测试 Atlassian 服务连通性与 Token 有效性 ===");
+    eprintln!("=== 正在测试 Atlassian 服务连通性与 Token 有效性 ===");
     let mut results = serde_json::Map::new();
 
     // 1. Jira
     if !cfg.jira_url.is_empty() && !cfg.jira_token.trim().is_empty() {
-        print!("  Checking Jira ({}) ... ", cfg.jira_url);
-        std::io::stdout().flush().ok();
+        eprint!("  Checking Jira ({}) ... ", cfg.jira_url);
+        std::io::stderr().flush().ok();
         match HttpClient::new(cfg.jira_url.clone(), &cfg.jira_token, cfg.allow_insecure_certs) {
             Ok(client) => match client.get("/rest/api/2/myself").await {
                 Ok(user) => {
                     let name = user["displayName"].as_str().or(user["name"].as_str()).unwrap_or("已认证");
-                    println!("SUCCESS (User: {})", name);
+                    eprintln!("SUCCESS (User: {})", name);
                     results.insert("jira".to_string(), json!({ "status": "ok", "user": name }));
                 }
                 Err(e) => {
-                    println!("FAILED ({})", e);
+                    eprintln!("FAILED ({})", e);
                     results.insert("jira".to_string(), json!({ "status": "error", "message": e.to_string() }));
                 }
             },
             Err(e) => {
-                println!("FAILED ({})", e);
+                eprintln!("FAILED ({})", e);
                 results.insert("jira".to_string(), json!({ "status": "error", "message": e.to_string() }));
             }
         }
     } else {
-        println!("  Checking Jira ... SKIPPED (未配置 URL 或 Token)");
+        eprintln!("  Checking Jira ... SKIPPED (未配置 URL 或 Token)");
         results.insert("jira".to_string(), json!({ "status": "skipped", "reason": "未配置" }));
     }
 
     // 2. Confluence
     if !cfg.confluence_url.is_empty() && !cfg.confluence_token.trim().is_empty() {
-        print!("  Checking Confluence ({}) ... ", cfg.confluence_url);
-        std::io::stdout().flush().ok();
+        eprint!("  Checking Confluence ({}) ... ", cfg.confluence_url);
+        std::io::stderr().flush().ok();
         match HttpClient::new(cfg.confluence_url.clone(), &cfg.confluence_token, cfg.allow_insecure_certs) {
             Ok(client) => match client.get("/rest/api/user/current").await {
                 Ok(user) => {
                     let name = user["displayName"].as_str().or(user["username"].as_str()).unwrap_or("已认证");
-                    println!("SUCCESS (User: {})", name);
+                    eprintln!("SUCCESS (User: {})", name);
                     results.insert("confluence".to_string(), json!({ "status": "ok", "user": name }));
                 }
                 Err(e) => {
-                    println!("FAILED ({})", e);
+                    eprintln!("FAILED ({})", e);
                     results.insert("confluence".to_string(), json!({ "status": "error", "message": e.to_string() }));
                 }
             },
             Err(e) => {
-                println!("FAILED ({})", e);
+                eprintln!("FAILED ({})", e);
                 results.insert("confluence".to_string(), json!({ "status": "error", "message": e.to_string() }));
             }
         }
     } else {
-        println!("  Checking Confluence ... SKIPPED (未配置 URL 或 Token)");
+        eprintln!("  Checking Confluence ... SKIPPED (未配置 URL 或 Token)");
         results.insert("confluence".to_string(), json!({ "status": "skipped", "reason": "未配置" }));
     }
 
     // 3. Bitbucket
     if !cfg.bitbucket_url.is_empty() && !cfg.bitbucket_token.trim().is_empty() {
-        print!("  Checking Bitbucket ({}) ... ", cfg.bitbucket_url);
-        std::io::stdout().flush().ok();
+        eprint!("  Checking Bitbucket ({}) ... ", cfg.bitbucket_url);
+        std::io::stderr().flush().ok();
         match HttpClient::new(cfg.bitbucket_url.clone(), &cfg.bitbucket_token, cfg.allow_insecure_certs) {
             Ok(client) => {
                 let user_res = async {
@@ -191,28 +191,28 @@ pub async fn test(cfg: &Config) -> Result<Value, AppError> {
 
                 match user_res {
                     Ok(name) => {
-                        println!("SUCCESS (User: {})", name);
+                        eprintln!("SUCCESS (User: {})", name);
                         results.insert("bitbucket".to_string(), json!({ "status": "ok", "user": name }));
                     }
                     Err(_) => match client.get("/rest/api/1.0/projects?limit=1").await {
                         Ok(_) => {
-                            println!("SUCCESS (已连通)");
+                            eprintln!("SUCCESS (已连通)");
                             results.insert("bitbucket".to_string(), json!({ "status": "ok" }));
                         }
                         Err(e) => {
-                            println!("FAILED ({})", e);
+                            eprintln!("FAILED ({})", e);
                             results.insert("bitbucket".to_string(), json!({ "status": "error", "message": e.to_string() }));
                         }
                     },
                 }
             }
             Err(e) => {
-                println!("FAILED ({})", e);
+                eprintln!("FAILED ({})", e);
                 results.insert("bitbucket".to_string(), json!({ "status": "error", "message": e.to_string() }));
             }
         }
     } else {
-        println!("  Checking Bitbucket ... SKIPPED (未配置 URL 或 Token)");
+        eprintln!("  Checking Bitbucket ... SKIPPED (未配置 URL 或 Token)");
         results.insert("bitbucket".to_string(), json!({ "status": "skipped", "reason": "未配置" }));
     }
 
