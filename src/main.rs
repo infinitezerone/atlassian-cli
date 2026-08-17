@@ -39,6 +39,10 @@ struct Cli {
     #[arg(long, global = true)]
     confirm: bool,
 
+    /// 紧凑 JSON 输出 (单行无缩进,省 Token,供 AI/脚本管道使用;默认 pretty 便于人类阅读)
+    #[arg(long, global = true)]
+    compact: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -158,7 +162,7 @@ async fn main() {
     let mut cfg = match config::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", serde_json::to_string_pretty(&e.to_json()).unwrap());
+            eprintln!("{}", json_output(&e.to_json(), cli.compact));
             exit(e.code.exit_code());
         }
     };
@@ -212,12 +216,21 @@ async fn main() {
             if security::sanitize_all_strings(&mut v) {
                 v["sanitized"] = json!(true);
             }
-            println!("{}", serde_json::to_string_pretty(&v).unwrap());
+            println!("{}", json_output(&v, cli.compact));
         }
         Err(e) => {
-            eprintln!("{}", serde_json::to_string_pretty(&e.to_json()).unwrap());
+            eprintln!("{}", json_output(&e.to_json(), cli.compact));
             exit(e.code.exit_code());
         }
+    }
+}
+
+/// 按 --compact 选择 JSON 序列化格式:紧凑单行(省 Token)或 pretty(人类可读)
+fn json_output(v: &serde_json::Value, compact: bool) -> String {
+    if compact {
+        serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string())
+    } else {
+        serde_json::to_string_pretty(v).unwrap_or_else(|_| "{}".to_string())
     }
 }
 

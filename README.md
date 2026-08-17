@@ -104,6 +104,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | `--dry-run` | Preview write operations as JSON (`status: dry_run`) without calling the API — zero side effects |
 | `--confirm` | Explicitly confirm write operations; **without it the CLI refuses to execute** (exit 2) |
 | `-k` / `--insecure` | Skip TLS certificate validation (MITM risk — only with user approval) |
+| `--compact` | Single-line compact JSON output (saves tokens; default is pretty-printed for humans) |
 
 **AI Retry Safety**: identical write requests (method + path + body) are deduplicated within a 300s window. Replays return `status: idempotent_replay` (exit 0) instead of re-sending — set `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` to adjust (0 = off), `ATLASSIAN_CLI_FORCE_WRITE=1` to bypass. Input guards: JQL syntax, `time_spent` units (w/d/h/m), `--started` ranges, and `[~mention]` syntax are all validated before any request. **Disk-friendly by design**: the dedupe fingerprint lives inside each `audit.jsonl` entry (no separate idempotency file → exactly one append per write op); `audit.jsonl` rotates past 5MB keeping one backup (`ATLASSIAN_CLI_AUDIT_MAX_BYTES` to tune). No unbounded growth, no write amplification.
 
