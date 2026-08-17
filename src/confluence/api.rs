@@ -17,11 +17,12 @@ impl Confluence {
         Self { http, policy }
     }
 
-    /// GET /rest/api/content/search?cql=... (支持全文检索或仅按标题精准搜索 --title-only，以及按空间 space 过滤)
+    /// GET /rest/api/content/search?cql=... (支持全文检索或仅按标题精准搜索 --title-only，以及按空间 space 过滤与分页)
     pub async fn search(
         &self,
         query: &str,
         limit: u32,
+        start_at: u32,
         title_only: bool,
         space: Option<&str>,
     ) -> Result<Value, AppError> {
@@ -39,6 +40,7 @@ impl Confluence {
         }
 
         let limit_str = limit.to_string();
+        let start_str = start_at.to_string();
         let raw = self
             .http
             .get_with_query(
@@ -46,6 +48,7 @@ impl Confluence {
                 &[
                     ("cql", &cql),
                     ("limit", &limit_str),
+                    ("start", &start_str),
                     ("expand", "version,space,history.lastUpdated"),
                 ],
             )
@@ -80,6 +83,7 @@ impl Confluence {
             "query": query,
             "title_only": title_only,
             "space": space.unwrap_or(""),
+            "start_at": start_at,
             "count": results.len(),
             "results": results
         }))
@@ -364,6 +368,78 @@ impl Confluence {
             "filename": file_name,
             "result": raw,
             "url": format!("{}/pages/viewpage.action?pageId={}", self.http.base_url(), id),
+        }))
+    }
+
+    /// GET /rest/api/content/{id}/child/attachment 根据页面附件列表匹配下载二进制流保存至本地
+    pub async fn download_attachment(
+        &self,
+        id_or_url: &str,
+        attachment_id_or_name: &str,
+        output_path: Option<&str>,
+    ) -> Result<Value, AppError> {
+        let id = parse_confluence_id(id_or_url);
+        let path = format!("/rest/api/content/{}/child/attachment", urlencoding::encode(&id));
+
+        let raw = self
+            .http
+            .get_with_query(&path, &[("limit", "100"), ("expand", "version")])
+            .await?;
+
+        let att_list = raw["results"].as_array().ok_or_else(|| {
+            AppError::not_found(format!("页面 {} 上未找到任何附件", id))
+        })?;
+
+        let target_str = attachment_id_or_name.trim();
+
+        // 匹配附件 (按 ID 或文件名，忽略大小写)
+        let matched = att_list
+            .iter()
+            .find(|att| {
+                let att_id = att["id"].as_str().unwrap_or("");
+                let title = att["title"].as_str().unwrap_or("");
+                att_id == target_str || title.eq_ignore_ascii_case(target_str)
+            })
+            .ok_or_else(|| {
+                AppError::not_found(format!(
+                    "页面 {} 上未找到 ID 或文件名为 '{}' 的附件",
+                    id, target_str
+                ))
+            })?;
+
+        let att_id = matched["id"].as_str().unwrap_or("");
+        let filename = matched["title"].as_str().unwrap_or("attachment");
+        let download_link = matched["_links"]["download"].as_str().ok_or_else(|| {
+            AppError::generic("附件元数据中缺少 download 链接")
+        })?;
+
+        let bytes = self.http.get_bytes(download_link).await?;
+
+        let save_to = match output_path {
+            Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p.trim()),
+            _ => std::path::PathBuf::from(filename),
+        };
+
+        if let Some(parent) = save_to.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
+
+        tokio::fs::write(&save_to, &bytes).await?;
+
+        let abs_path = std::fs::canonicalize(&save_to)
+            .unwrap_or_else(|_| save_to.clone())
+            .display()
+            .to_string();
+
+        Ok(json!({
+            "status": "success",
+            "page_id": id,
+            "attachment_id": att_id,
+            "filename": filename,
+            "size": bytes.len(),
+            "saved_path": abs_path,
         }))
     }
 

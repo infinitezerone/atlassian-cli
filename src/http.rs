@@ -76,6 +76,22 @@ impl HttpClient {
         }
     }
 
+    /// 发起二进制流下载的 GET 请求 (支持相对 API 路径或绝对 URL)
+    pub async fn get_bytes(&self, path_or_url: &str) -> Result<Vec<u8>, AppError> {
+        let url = if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
+            path_or_url.to_string()
+        } else {
+            self.url(path_or_url)
+        };
+        let res = self.client.get(&url).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            return Err(classify_http_error(status));
+        }
+        let bytes = res.bytes().await?;
+        Ok(bytes.to_vec())
+    }
+
     /// 发起带 Query 参数的 GET 请求 (自动对键值进行 urlencoding 编码)
     pub async fn get_with_query(&self, path: &str, query: &[(&str, &str)]) -> Result<Value, AppError> {
         let url = self.build_url_with_query(path, query);

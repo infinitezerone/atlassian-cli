@@ -59,7 +59,9 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
 | | `jira transitions <KEY/URL>` | Inspect all available status transitions & target statuses for an issue |
 | | `jira link <FROM> <TO> [--type "Relates"]` | Link two Jira issues together (supports Relates, Blocks, Cloners, Duplicate) |
+| | `jira fields [--query Q] [--custom-only]` | Introspect system & custom fields (maps `customfield_xxx` to human-readable names) |
 | | `jira attachments <KEY/URL>` | List all attachments with filename, size, and download URLs |
+| | `jira attachment-download <KEY/URL> <ID/NAME>` | Download Jira issue attachment locally with PAT authentication (`-o PATH`) |
 | | `jira attach <KEY/URL> <FILE>` | Upload a local file to a Jira issue |
 | | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority) |
 | | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels) |
@@ -68,11 +70,12 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira worklog-add <KEY/URL> <TIME> [--comment C]` | Log time spent on an issue (supports `"2h 30m"`, `"1d"`, `"45m"`, `--comment`, `--started`) |
 | | `jira worklog-list <KEY/URL>` | List all logged worklog entries & time spent on an issue |
 | | `jira worklog-delete <KEY/URL> <WORKLOG_ID>` | Delete a specific worklog entry from an issue |
-| **Confluence** | `confluence search <Q> [-t] [-s S]` | Search pages (full-text by default; `-t` for title-only search, `-s` for space filter) |
+| **Confluence** | `confluence search <Q> [--start-at N] [-t] [-s S]` | Search pages (full-text by default; `--start-at` pagination, `-t` title-only, `-s` space filter) |
 | | `confluence get <ID/URL> [-t] [--raw]` | Fetch page body (plain-text by default; `-t` for title/meta only, `--max-chars` & `--offset`) |
 | | `confluence children <ID/URL>` | List direct child pages with titles, IDs & versions (0-body lightweight inspection) |
 | | `confluence spaces [--query Q]` | List or search all accessible Confluence spaces & Space Keys |
 | | `confluence attachments <ID/URL>` | List all page attachments with filename, size, and download URLs |
+| | `confluence attachment-download <ID/URL> <ID/NAME>` | Download Confluence page attachment locally with PAT authentication (`-o PATH`) |
 | | `confluence attach <ID/URL> <FILE>` | Upload a local file to a Confluence page |
 | | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
 | | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |

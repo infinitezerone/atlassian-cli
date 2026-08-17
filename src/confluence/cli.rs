@@ -52,6 +52,9 @@ pub enum ConfluenceActions {
         /// 按 Confluence 空间 (Space Key) 过滤 (例如 PROJ 或 LLSQAG)
         #[arg(long, short = 's')]
         space: Option<String>,
+        /// 分页起始偏移量 (用于搜索多页结果，默认 0)
+        #[arg(long, default_value_t = 0)]
+        start_at: u32,
         /// 返回条数上限
         #[arg(long, default_value_t = 10)]
         limit: u32,
@@ -106,6 +109,16 @@ pub enum ConfluenceActions {
         /// 附件备注说明 (可选)
         #[arg(long)]
         comment: Option<String>,
+    },
+    /// 带 PAT 认证下载 Confluence 页面附件并保存至本地文件
+    AttachmentDownload {
+        /// 页面 ID 或网页 URL
+        id: String,
+        /// 目标附件 ID 或附件文件名 (如 "att12345" 或 "spec.pdf")
+        attachment: String,
+        /// 本地保存路径 (可选，默认保存在当前目录下的原始文件名)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
     },
     /// 创建新 Confluence 页面 (原生支持时间宏与 Jira 卡片宏)
     Create(CreatePageArgs),

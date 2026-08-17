@@ -60,6 +60,14 @@ impl AtlassianModule for Jira {
             } => self.link_issue(&from_key, &to_key, &r#type, comment.as_deref()).await,
             JiraActions::Attachments { key } => self.list_attachments(&key).await,
             JiraActions::Attach { key, file } => self.attach_file(&key, &file).await,
+            JiraActions::AttachmentDownload { key, attachment, output } => {
+                self.download_attachment(&key, &attachment, output.as_deref()).await
+            }
+            JiraActions::Fields {
+                query,
+                custom_only,
+                limit,
+            } => self.list_fields(query.as_deref(), custom_only, limit).await,
         }
     }
 }
