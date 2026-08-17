@@ -30,6 +30,17 @@ git clone https://github.com/infinitezerone/atlassian-cli.git
 cd atlassian-cli && cargo build --release
 ```
 
+**Upgrading**: re-run the install script or `brew upgrade atlassian-cli`. Run `atlassian-cli check-update` anytime to compare your local version against the latest GitHub release:
+
+```bash
+atlassian-cli check-update              # {"status":"ok","current_version":"0.3.0","latest_version":"0.3.0","up_to_date":true,...}
+atlassian-cli check-update --compact    # single-line, for scripts/pipelines
+```
+
+## 🔄 Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history (Keep a Changelog format).
+
 ### 2. Initial Setup
 
 ```bash
@@ -96,6 +107,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `config test` / `config status` | Verify connectivity & Token permissions |
 | **Introspect** | `schema [path...]` | Machine-readable command tree JSON for AI agents (e.g. `schema jira comment`) |
 | **Audit** | `audit [--limit N]` | Local write-audit trail: what was changed, when, by which request (incl. `replayed` markers) |
+| **Update** | `check-update` | Compare local version against latest GitHub release (`--compact` for pipelines) |
 
 **Global Flags** (usable anywhere):
 
