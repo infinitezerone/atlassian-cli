@@ -259,33 +259,24 @@ atlassian-cli bitbucket approve-pr 100 --confirm
 
 ## 5. Safety & Operational Rules
 
-### Write-Operation Safety & Human Confirmation Protocol (CRITICAL)
+### Write-Operation Safety Flow
 
 All write operations (comment / transition / create / update / assign / worklog / link / attach / create-pr / comment-pr / approve-pr) require an explicit `--confirm` flag. Without it the CLI refuses to execute (exit 2, code `PARAM_INVALID`).
 
-**MANDATORY AI AGENT TWO-PHASE PROTOCOL:**
-1. **Phase 1 (Preview & Propose)**:
-   - When a task requires a modifying action, the AI agent MUST NOT blindly run `--confirm`.
-   - Run `--dry-run` (or prepare the payload) and **explicitly present the proposed change in the chat to the human user**:
-     - *Target*: Issue key / Page ID / PR URL
-     - *Action*: Create / Update / Comment / Transition / Approve
-     - *Content*: The summary, body text, or fields being applied
-     - *Question*: Ask the user: *"Would you like me to proceed with this modification?"*
-2. **Phase 2 (Authorized Execution)**:
-   - **ONLY AFTER** the user explicitly confirms (e.g. "yes", "proceed", "looks good", "confirm"), execute the command with `--confirm`.
-   - If the user was already explicitly commanding the action with full details (e.g. "please comment PROJ-123 with 'LGTM'"), executing with `--confirm` is allowed directly.
+**Always preview before executing a write operation:**
 
 ```bash
 # 1) Preview (zero side effects — prints the request that WOULD be sent)
 atlassian-cli --dry-run jira comment PROJ-123 "Analysis completed."
 
-# 2) After the user explicitly confirms in chat, execute with --confirm
+# 2) Execute with --confirm
 atlassian-cli --confirm jira comment PROJ-123 "Analysis completed."
 ```
 
 - `--dry-run` prints `{"status":"dry_run","action","method","path","target","body","hint"}` and never calls the API (attachments show file name + size only, transitions show the target status instead of resolving the transition id).
 - Read operations ignore `--dry-run` / `--confirm`.
-- Legacy scripts: `ATLASSIAN_CLI_ALLOW_UNCONFIRMED=1` temporarily bypasses the confirmation gate — migration only, not recommended for agents.
+- Legacy scripts: `ATLASSIAN_CLI_ALLOW_UNCONFIRMED=1` temporarily bypasses the confirmation gate — migration only.
+- **Human confirmation is enforced at the agent platform layer**: the CLI marks write commands with `--confirm` so agent platforms (Claude Code / WorkBuddy / etc.) can intercept and ask the user. The CLI itself is non-interactive and does not prompt.
 
 ### General Rules
 

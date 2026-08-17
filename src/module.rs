@@ -33,8 +33,8 @@ pub fn require_confirmed(policy: &WritePolicy) -> Result<(), AppError> {
     } else {
         let suggested_cmd = build_suggested_confirm_command();
         Err(AppError::param_invalid("写操作需要显式确认")
-            .with_detail("安全门禁:检测到写操作。请先向用户展示拟修改内容，获得用户确认批准后再追加 --confirm 执行;仅预览请追加 --dry-run")
-            .with_suggestion("安全门禁:请先向用户汇报拟修改内容并请求确认。获得用户明确批准后，方可追加 --confirm 执行该操作")
+            .with_detail("确认执行请追加 --confirm;仅预览请追加 --dry-run")
+            .with_suggestion("确认执行请追加 --confirm;仅预览请追加 --dry-run")
             .with_suggested_command(suggested_cmd))
     }
 }
