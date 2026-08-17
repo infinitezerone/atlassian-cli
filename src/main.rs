@@ -10,6 +10,7 @@ mod module;
 mod schema;
 mod security;
 mod skill;
+mod update;
 mod utils;
 
 use std::process::exit;
@@ -101,6 +102,8 @@ enum Commands {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// 检查是否有新版本发布 (对比 GitHub 最新 Release)
+    CheckUpdate,
 }
 
 #[derive(Subcommand)]
@@ -208,6 +211,7 @@ async fn main() {
         }
         Commands::Schema { command } => schema::render(&Cli::command(), &command),
         Commands::Audit { limit } => audit::read(limit as usize),
+        Commands::CheckUpdate => update::check_update().await,
     };
 
     match result {
