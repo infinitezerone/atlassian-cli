@@ -78,6 +78,41 @@ pub fn install_skill() -> Result<Value, AppError> {
     }))
 }
 
+/// 从所有常见 AI Agent 目录卸载本 Skill(删除整个 skill 目录,含 references/)。
+/// 只删除 COMMON_SKILL_REL_PATHS 推导出的明确 skill 路径,不碰其他文件。
+pub fn uninstall_skill() -> Result<Value, AppError> {
+    let paths = get_skill_paths()?;
+    let mut removed: Vec<String> = Vec::new();
+    let mut not_found: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+
+    for target_path in &paths {
+        // skill 根目录 = SKILL.md 的父目录(如 ~/.gemini/config/skills/atlassian-cli)
+        if let Some(skill_dir) = target_path.parent() {
+            if !skill_dir.exists() {
+                not_found.push(skill_dir.to_string_lossy().to_string());
+                continue;
+            }
+            match fs::remove_dir_all(skill_dir) {
+                Ok(_) => removed.push(skill_dir.to_string_lossy().to_string()),
+                Err(e) => failed.push(format!("{} ({})", skill_dir.to_string_lossy(), e)),
+            }
+        }
+    }
+
+    Ok(json!({
+        "status": if failed.is_empty() { "success" } else { "partial" },
+        "action": "uninstall_skill",
+        "removed_count": removed.len(),
+        "removed_paths": removed,
+        "not_found_count": not_found.len(),
+        "not_found_paths": not_found,
+        "failed_count": failed.len(),
+        "failed": failed,
+        "message": "Skill(SKILL.md + references/)已从对应 Agent 目录卸载。"
+    }))
+}
+
 /// 检查常见 AI Agent 目录中 Skill 的部署状态
 pub fn skill_status() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
