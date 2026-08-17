@@ -694,6 +694,226 @@ impl Jira {
         }))
     }
 
+    /// GET /rest/api/2/project (列出所有可见项目)
+    pub async fn list_projects(&self, query: Option<&str>) -> Result<Value, AppError> {
+        let raw = self.http.get("/rest/api/2/project").await?;
+        let q = query.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+        let projects: Vec<Value> = raw
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter(|p| {
+                        q.as_ref()
+                            .map(|kw| {
+                                p["key"].as_str().unwrap_or("").to_lowercase().contains(kw)
+                                    || p["name"].as_str().unwrap_or("").to_lowercase().contains(kw)
+                            })
+                            .unwrap_or(true)
+                    })
+                    .map(|p| {
+                        json!({
+                            "key": p["key"],
+                            "name": p["name"],
+                            "project_type": p["projectTypeKey"],
+                            "style": p["style"],
+                            "url": format!("{}/browse/{}", self.http.base_url(), p["key"].as_str().unwrap_or("")),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(json!({
+            "status": "ok",
+            "count": projects.len(),
+            "projects": projects,
+        }))
+    }
+
+    /// GET /rest/api/2/issue/createmeta (查询项目可用的 issue 类型,避免猜类型名)
+    pub async fn get_issue_types(&self, project: Option<&str>, limit: u32) -> Result<Value, AppError> {
+        let raw = match project.map(|p| p.trim()).filter(|p| !p.is_empty()) {
+            Some(p) => {
+                self.http
+                    .get_with_query("/rest/api/2/issue/createmeta", &[("projectKeys", p)])
+                    .await?
+            }
+            None => self.http.get("/rest/api/2/issue/createmeta").await?,
+        };
+
+        // 聚合所有项目的 issue 类型(按 name 去重)
+        let mut seen = std::collections::HashSet::new();
+        let mut types: Vec<Value> = Vec::new();
+        if let Some(projects) = raw["projects"].as_array() {
+            for pr in projects {
+                if let Some(iss) = pr["issuetypes"].as_array() {
+                    for t in iss {
+                        let name = t["name"].as_str().unwrap_or("");
+                        if !name.is_empty() && seen.insert(name.to_string()) {
+                            types.push(json!({
+                                "id": t["id"],
+                                "name": t["name"],
+                                "subtask": t["subtask"],
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        types.truncate(limit as usize);
+        Ok(json!({
+            "status": "ok",
+            "project": project,
+            "count": types.len(),
+            "issue_types": types,
+            "hint": "创建/克隆单子时使用 issue_types 中的 name 作为 --issue-type",
+        }))
+    }
+
+    /// GET/POST/DELETE /rest/api/2/issue/{key}/watchers (查看/添加/移除关注人)
+    pub async fn manage_watchers(
+        &self,
+        key_or_url: &str,
+        add: Option<&str>,
+        remove: Option<&str>,
+    ) -> Result<Value, AppError> {
+        let key = parse_jira_key(key_or_url);
+        let enc_key = urlencoding::encode(&key);
+        let path = format!("/rest/api/2/issue/{}/watchers", enc_key);
+
+        if add.is_some() && remove.is_some() {
+            return Err(AppError::param_invalid("不能同时使用 --add 和 --remove"));
+        }
+
+        if let Some(u) = add {
+            let clean = parse_username(u);
+            if clean.is_empty() {
+                return Err(AppError::param_invalid("--add 的用户名不能为空"));
+            }
+            let body = json!(clean); // Jira watchers POST body 为 JSON 字符串
+            if self.policy.dry_run {
+                return Ok(crate::module::preview_json(
+                    "jira.watchers-add", "POST", &path, &key, Some(&body), None,
+                ));
+            }
+            crate::module::require_confirmed(&self.policy)?;
+            let raw = self.http.post(&path, body).await?;
+            if crate::module::is_replayed(&raw) {
+                return Ok(raw);
+            }
+            return Ok(json!({
+                "status": "success",
+                "issue": key,
+                "action": "add",
+                "user": clean,
+            }));
+        }
+
+        if let Some(u) = remove {
+            let clean = parse_username(u);
+            if clean.is_empty() {
+                return Err(AppError::param_invalid("--remove 的用户名不能为空"));
+            }
+            let del_path = format!("{}?username={}", path, urlencoding::encode(&clean));
+            if self.policy.dry_run {
+                return Ok(crate::module::preview_json(
+                    "jira.watchers-remove", "DELETE", &del_path, &key, None, None,
+                ));
+            }
+            crate::module::require_confirmed(&self.policy)?;
+            let raw = self.http.delete(&del_path).await?;
+            if crate::module::is_replayed(&raw) {
+                return Ok(raw);
+            }
+            return Ok(json!({
+                "status": "success",
+                "issue": key,
+                "action": "remove",
+                "user": clean,
+            }));
+        }
+
+        // 读操作:查询关注人
+        let raw = self.http.get(&path).await?;
+        let watchers: Vec<Value> = raw["watchers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|w| {
+                        json!({
+                            "username": w["name"],
+                            "display_name": w["displayName"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(json!({
+            "status": "ok",
+            "issue": key,
+            "is_watching": raw["isWatching"],
+            "watchers_count": raw["watchCount"],
+            "watchers": watchers,
+        }))
+    }
+
+    /// DELETE /rest/api/2/issue/{key}/attachments/{id} (删除附件,支持 ID 或文件名)
+    pub async fn delete_attachment(
+        &self,
+        key_or_url: &str,
+        attachment_id_or_name: &str,
+    ) -> Result<Value, AppError> {
+        let key = parse_jira_key(key_or_url);
+        let path = format!("/rest/api/2/issue/{}", urlencoding::encode(&key));
+
+        // 解析附件 ID(支持 ID 或文件名,忽略大小写)
+        let raw = self
+            .http
+            .get_with_query(&path, &[("fields", "attachment")])
+            .await?;
+        let att_list = raw["fields"]["attachment"].as_array().ok_or_else(|| {
+            AppError::not_found(format!("工单 {} 上未找到任何附件", key))
+        })?;
+        let target_str = attachment_id_or_name.trim();
+        let matched = att_list
+            .iter()
+            .find(|att| {
+                let id = att["id"].as_str().unwrap_or("");
+                let filename = att["filename"].as_str().unwrap_or("");
+                id == target_str || filename.eq_ignore_ascii_case(target_str)
+            })
+            .ok_or_else(|| {
+                AppError::not_found(format!(
+                    "工单 {} 上未找到 ID 或文件名为 '{}' 的附件",
+                    key, target_str
+                ))
+            })?;
+        let att_id = matched["id"].as_str().unwrap_or("");
+
+        let del_path = format!(
+            "/rest/api/2/issue/{}/attachments/{}",
+            urlencoding::encode(&key),
+            urlencoding::encode(att_id)
+        );
+        if self.policy.dry_run {
+            let body = json!({ "attachment_id": att_id, "filename": matched["filename"] });
+            return Ok(crate::module::preview_json(
+                "jira.attachment-delete", "DELETE", &del_path, &key, Some(&body), None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.delete(&del_path).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+        Ok(json!({
+            "status": "success",
+            "issue": key,
+            "attachment_id": att_id,
+            "filename": matched["filename"],
+            "deleted": true,
+        }))
+    }
+
     /// PUT /rest/api/2/issue/{key} (支持直接传入 Issue Key 或网页 URL)
     pub async fn update_issue(&self, a: &UpdateIssueArgs) -> Result<Value, AppError> {
         let key = parse_jira_key(&a.key_or_url);

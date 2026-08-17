@@ -92,6 +92,13 @@ atlassian-cli jira comment PROJ-123 "Please review, thanks [~john.doe]" --confir
 atlassian-cli jira fields --query "Sprint"
 atlassian-cli jira fields --custom-only
 
+# List all visible projects (with --query filter)
+atlassian-cli jira projects
+atlassian-cli jira projects --query "mobile"
+
+# List available issue types for a project (avoids guessing --issue-type)
+atlassian-cli jira issue-types --project PROJ
+
 # Inspect all available status transitions (avoid guessing transition names!)
 atlassian-cli jira transitions PROJ-123
 
@@ -106,6 +113,21 @@ atlassian-cli jira attachment-download PROJ-123 crash.log --output ./downloads/c
 
 # Upload local file to an issue
 atlassian-cli jira attach PROJ-123 ./crash.log --confirm
+
+# Delete an attachment (accepts ID or filename)
+atlassian-cli jira attachment-delete PROJ-123 crash.log --confirm
+```
+
+## Watchers (View / Add / Remove)
+```bash
+# View watchers of an issue
+atlassian-cli jira watchers PROJ-123
+
+# Add a watcher (--confirm required)
+atlassian-cli jira watchers PROJ-123 --add john.doe --confirm
+
+# Remove a watcher (--confirm required)
+atlassian-cli jira watchers PROJ-123 --remove john.doe --confirm
 ```
 
 ## Worklog & Time Tracking
