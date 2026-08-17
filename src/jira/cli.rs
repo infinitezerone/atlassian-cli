@@ -160,6 +160,28 @@ pub enum JiraActions {
         /// 本地文件路径 (如 ./crash.log 或 /path/to/screenshot.png)
         file: String,
     },
+    /// 带 PAT 认证下载 Jira 工单附件并保存至本地文件
+    AttachmentDownload {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 目标附件 ID 或附件文件名 (如 "12345" 或 "crash.log")
+        attachment: String,
+        /// 本地保存路径 (可选，默认保存在当前目录下的原始文件名)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+    },
+    /// 查询 Jira 系统标准字段与自定义字段元数据 (将 customfield_xxx 翻译为人类可读名称)
+    Fields {
+        /// 字段 ID 或字段名称搜索过滤 (如 "Sprint" 或 "customfield_10020")
+        #[arg(long, short = 'q')]
+        query: Option<String>,
+        /// 仅列出企业自定义字段 (customfield)
+        #[arg(long)]
+        custom_only: bool,
+        /// 最多返回条数 (默认 50)
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
 }
 
 #[derive(Args)]

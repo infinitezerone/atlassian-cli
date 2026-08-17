@@ -100,8 +100,12 @@ atlassian-cli jira comment PROJ-123 "Please review, thanks [~john.doe]" --confir
 - Broken mention syntax (`[~john doe]`, `[~]`, unclosed `[~...`) is rejected with `PARAM_INVALID` (exit 2) and a pointer to `jira user`.
 - Bare `@` text is left untouched (it's plain text in Jira, not a mention).
 
-### Transitions, Links & Attachments
+### Transitions, Links, Attachments & Fields
 ```bash
+# Introspect system and custom field metadata (translate customfield_xxx to human names)
+atlassian-cli jira fields --query "Sprint"
+atlassian-cli jira fields --custom-only
+
 # Inspect all available status transitions (avoid guessing transition names!)
 atlassian-cli jira transitions PROJ-123
 
@@ -110,6 +114,9 @@ atlassian-cli jira link PROJ-123 PROJ-456 --type "Relates" --comment "Related ba
 
 # List attachments on an issue
 atlassian-cli jira attachments PROJ-123
+
+# Download attachment locally with PAT authentication (accepts ID or filename)
+atlassian-cli jira attachment-download PROJ-123 crash.log --output ./downloads/crash.log
 
 # Upload local file to an issue
 atlassian-cli jira attach PROJ-123 ./crash.log --confirm
@@ -135,8 +142,8 @@ atlassian-cli jira worklog-delete PROJ-123 7858155 --confirm
 
 ### Search Documentation & Spaces (CQL)
 ```bash
-# Full-text search
-atlassian-cli confluence search "Architecture Design" --limit 5
+# Full-text search with pagination
+atlassian-cli confluence search "Architecture Design" --limit 5 --start-at 10
 
 # Title-only exact search (lightweight, zero false positives)
 atlassian-cli confluence search "Release Plan" --title-only --space PROJ
@@ -155,6 +162,9 @@ atlassian-cli confluence children 12345678 --limit 20
 
 # List attachments on a page
 atlassian-cli confluence attachments 12345678
+
+# Download attachment locally with PAT authentication (accepts ID or filename)
+atlassian-cli confluence attachment-download 12345678 spec.pdf --output ./downloads/spec.pdf
 
 # Upload local file to a Confluence page
 atlassian-cli confluence attach 12345678 ./spec.pdf --comment "Updated architecture spec" --confirm

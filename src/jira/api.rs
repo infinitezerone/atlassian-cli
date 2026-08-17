@@ -868,6 +868,133 @@ impl Jira {
             "url": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }
+
+    /// GET /rest/api/2/field (查询 Jira 字段元数据字典，将 customfield_xxx 翻译为人类可读名称)
+    pub async fn list_fields(
+        &self,
+        query: Option<&str>,
+        custom_only: bool,
+        limit: u32,
+    ) -> Result<Value, AppError> {
+        let raw = self.http.get("/rest/api/2/field").await?;
+        let fields = filter_fields_json(&raw, query, custom_only, limit);
+
+        Ok(json!({
+            "query": query.unwrap_or(""),
+            "custom_only": custom_only,
+            "count": fields.len(),
+            "fields": fields,
+        }))
+    }
+
+    /// GET /rest/api/2/attachment/{id} 或根据 issue 附件列表匹配下载二进制流保存至本地
+    pub async fn download_attachment(
+        &self,
+        key_or_url: &str,
+        attachment_id_or_name: &str,
+        output_path: Option<&str>,
+    ) -> Result<Value, AppError> {
+        let key = parse_jira_key(key_or_url);
+        let path = format!("/rest/api/2/issue/{}", urlencoding::encode(&key));
+
+        let raw = self
+            .http
+            .get_with_query(&path, &[("fields", "attachment")])
+            .await?;
+
+        let att_list = raw["fields"]["attachment"].as_array().ok_or_else(|| {
+            AppError::not_found(format!("工单 {} 上未找到任何附件", key))
+        })?;
+
+        let target_str = attachment_id_or_name.trim();
+
+        // 匹配附件 (按 ID 或文件名，忽略大小写)
+        let matched = att_list
+            .iter()
+            .find(|att| {
+                let id = att["id"].as_str().unwrap_or("");
+                let filename = att["filename"].as_str().unwrap_or("");
+                id == target_str || filename.eq_ignore_ascii_case(target_str)
+            })
+            .ok_or_else(|| {
+                AppError::not_found(format!(
+                    "工单 {} 上未找到 ID 或文件名为 '{}' 的附件",
+                    key, target_str
+                ))
+            })?;
+
+        let att_id = matched["id"].as_str().unwrap_or("");
+        let filename = matched["filename"].as_str().unwrap_or("attachment");
+        let download_url = matched["content"].as_str().ok_or_else(|| {
+            AppError::generic("附件元数据中缺少 download content URL")
+        })?;
+
+        let bytes = self.http.get_bytes(download_url).await?;
+
+        let save_to = match output_path {
+            Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p.trim()),
+            _ => std::path::PathBuf::from(filename),
+        };
+
+        if let Some(parent) = save_to.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
+
+        tokio::fs::write(&save_to, &bytes).await?;
+
+        let abs_path = std::fs::canonicalize(&save_to)
+            .unwrap_or_else(|_| save_to.clone())
+            .display()
+            .to_string();
+
+        Ok(json!({
+            "status": "success",
+            "issue_key": key,
+            "attachment_id": att_id,
+            "filename": filename,
+            "size": bytes.len(),
+            "saved_path": abs_path,
+        }))
+    }
+}
+
+fn filter_fields_json(raw: &Value, query: Option<&str>, custom_only: bool, limit: u32) -> Vec<Value> {
+    let q_lower = query.map(|q| q.trim().to_lowercase()).filter(|q| !q.is_empty());
+    raw.as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|f| {
+                    let id = f["id"].as_str().unwrap_or("");
+                    let name = f["name"].as_str().unwrap_or("");
+                    let is_custom = f["custom"].as_bool().unwrap_or(false);
+
+                    if custom_only && !is_custom {
+                        return None;
+                    }
+
+                    if let Some(ref q) = q_lower {
+                        if !id.to_lowercase().contains(q) && !name.to_lowercase().contains(q) {
+                            return None;
+                        }
+                    }
+
+                    let field_type = f["schema"]["type"].as_str().unwrap_or("");
+                    let schema_custom = f["schema"]["custom"].as_str().unwrap_or("");
+
+                    Some(json!({
+                        "id": id,
+                        "name": name,
+                        "custom": is_custom,
+                        "type": field_type,
+                        "schema_custom": schema_custom,
+                    }))
+                })
+                .take(limit as usize)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn format_jira_started_time(s: &str) -> String {
@@ -889,5 +1016,44 @@ mod tests {
     fn test_format_jira_started_time() {
         assert_eq!(format_jira_started_time("2026-08-13"), "2026-08-13T09:00:00.000+0800");
         assert_eq!(format_jira_started_time("2026-08-13T10:00:00.000+0800"), "2026-08-13T10:00:00.000+0800");
+    }
+
+    #[test]
+    fn test_filter_fields_json() {
+        let raw = json!([
+            {
+                "id": "summary",
+                "name": "Summary",
+                "custom": false,
+                "schema": { "type": "string", "system": "summary" }
+            },
+            {
+                "id": "customfield_10020",
+                "name": "Sprint",
+                "custom": true,
+                "schema": { "type": "array", "custom": "com.pyxis.greenhopper.jira:gh-sprint" }
+            },
+            {
+                "id": "customfield_10010",
+                "name": "Epic Link",
+                "custom": true,
+                "schema": { "type": "string", "custom": "com.pyxis.greenhopper.jira:gh-epic-link" }
+            }
+        ]);
+
+        let all = filter_fields_json(&raw, None, false, 10);
+        assert_eq!(all.len(), 3);
+
+        let custom = filter_fields_json(&raw, None, true, 10);
+        assert_eq!(custom.len(), 2);
+        assert_eq!(custom[0]["name"], "Sprint");
+
+        let queried = filter_fields_json(&raw, Some("epic"), false, 10);
+        assert_eq!(queried.len(), 1);
+        assert_eq!(queried[0]["id"], "customfield_10010");
+
+        let queried_by_id = filter_fields_json(&raw, Some("10020"), false, 10);
+        assert_eq!(queried_by_id.len(), 1);
+        assert_eq!(queried_by_id[0]["name"], "Sprint");
     }
 }
