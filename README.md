@@ -63,8 +63,8 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira attachments <KEY/URL>` | List all attachments with filename, size, and download URLs |
 | | `jira attachment-download <KEY/URL> <ID/NAME>` | Download Jira issue attachment locally with PAT authentication (`-o PATH`) |
 | | `jira attach <KEY/URL> <FILE>` | Upload a local file to a Jira issue |
-| | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority) |
-| | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels) |
+| | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority/`--custom`/`--custom-json`) |
+| | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels/`--custom`/`--custom-json`) |
 | | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user (auto-sanitizes `[~...]` / `@{...}`) |
 | | `jira assignable-users <KEY/URL> [Q]` | Search valid assignable users for an issue (matches webpage autocomplete) |
 | | `jira worklog-add <KEY/URL> <TIME> [--comment C]` | Log time spent on an issue (supports `"2h 30m"`, `"1d"`, `"45m"`, `--comment`, `--started`) |
@@ -82,7 +82,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |
 | | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
 | | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
-| | `bitbucket diff-pr <URL/ID>` | View PR code diff & changed file list |
+| | `bitbucket diff-pr <URL/ID>` | View PR code diff (`--stat` for file list overview, `--file <PATH>` for single file, `--max-lines`) |
 | | `bitbucket comments-pr <URL/ID>` | Fetch PR comment tree & discussions |
 | | `bitbucket comment-pr <URL/ID> --text "..."` | Post a comment on PR (supports `--file <PATH>` & `--line <NUM>` for inline comments) |
 | | `bitbucket create-pr --project P --repo R ...` | Create PR (auto-loads web default reviewers, supports extra `--reviewers`) |

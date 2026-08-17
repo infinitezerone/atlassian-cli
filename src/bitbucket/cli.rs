@@ -86,6 +86,30 @@ pub struct GetPrArgs {
     pub id_or_url: String,
 }
 
+#[derive(Args)]
+pub struct DiffPrArgs {
+    /// Bitbucket Project 名 (例如 PROJ，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (例如 my-repo，若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或 https://gitpub.../pull-requests/2420/overview)
+    pub id_or_url: String,
+    /// 仅返回变更文件路径与增减行统计大纲 (--stat)，不输出庞大 Diff 正文 (极度省 Token)
+    #[arg(long, short = 's')]
+    pub stat: bool,
+    /// 仅提取并查看指定单文件的 Diff 内容 (如 src/main.rs)
+    #[arg(long, short = 'f')]
+    pub file: Option<String>,
+    /// 最大输出 Diff 行数限制 (默认 1000，设为 0 表示不限制)
+    #[arg(long, default_value_t = 1000)]
+    pub max_lines: usize,
+    /// 行起始偏移量 (用于超长 Diff 续读)
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+}
+
 /// Bitbucket 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum BitbucketActions {
@@ -95,8 +119,8 @@ pub enum BitbucketActions {
     CreatePr(CreatePrArgs),
     /// 获取 PR 详情 (支持直接传入网页 URL)
     GetPr(GetPrArgs),
-    /// 查看 PR 代码修改差异与变动文件 (支持直接传入网页 URL)
-    DiffPr(GetPrArgs),
+    /// 查看 PR 代码修改差异与变动文件 (支持 --stat 概览、--file 单文件查看与 --max-lines 截断)
+    DiffPr(DiffPrArgs),
     /// 查看 PR 的评论讨论树与活动记录 (支持直接传入网页 URL)
     CommentsPr(GetPrArgs),
     /// 在 PR 上发表评论 (支持直接传入网页 URL)

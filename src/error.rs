@@ -89,6 +89,8 @@ pub struct AppError {
     pub module: Option<String>,
     /// 覆盖默认 suggestion(可选,用于给具体场景更精准的下一步建议)
     suggestion: Option<String>,
+    /// 直接可重试执行的完整命令(供 AI Agent 零推理开销执行)
+    pub suggested_command: Option<String>,
     pub source: Option<anyhow::Error>,
 }
 
@@ -100,6 +102,7 @@ impl AppError {
             detail: None,
             module: None,
             suggestion: None,
+            suggested_command: None,
             source: None,
         }
     }
@@ -112,6 +115,12 @@ impl AppError {
     /// 覆盖默认 suggestion(agent 可执行的下一步)
     pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
         self.suggestion = Some(suggestion.into());
+        self
+    }
+
+    /// 提供精准拼接好的完整重试命令行
+    pub fn with_suggested_command(mut self, command: impl Into<String>) -> Self {
+        self.suggested_command = Some(command.into());
         self
     }
 
@@ -154,6 +163,9 @@ impl AppError {
             "message": self.message,
             "suggestion": self.suggestion.clone().unwrap_or_else(|| self.code.suggestion().to_string()),
         });
+        if let Some(cmd) = &self.suggested_command {
+            v["suggested_command"] = serde_json::json!(cmd);
+        }
         if let Some(d) = &self.detail {
             v["detail"] = serde_json::json!(d);
         }
@@ -191,6 +203,7 @@ impl From<anyhow::Error> for AppError {
                 detail: ae.detail.clone(),
                 module: ae.module.clone(),
                 suggestion: ae.suggestion.clone(),
+                suggested_command: ae.suggested_command.clone(),
                 source: None,
             };
         }
