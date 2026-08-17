@@ -60,6 +60,13 @@ atlassian-cli jira suggest-values --field assignee --query "John"
 atlassian-cli jira comment PROJ-123 "Analysis completed. Pending code review." --confirm
 ```
 
+### Edit / Delete Comments
+```bash
+# Get the comment id first (jira get returns comments[].id), then:
+atlassian-cli jira comment-update PROJ-123 10001 "Revised comment text" --confirm
+atlassian-cli jira comment-delete PROJ-123 10001 --confirm
+```
+
 ### Transition Issue Status
 ```bash
 atlassian-cli jira transition PROJ-123 "In Progress" --confirm
@@ -73,6 +80,12 @@ atlassian-cli jira create --project PROJ --summary "Fix login timeout bug" --iss
 
 # Update Issue fields
 atlassian-cli jira update PROJ-123 --summary "Updated title" --priority Medium --labels "backend,urgent" --custom "customfield_10010=PROJ-10" --confirm
+
+# Bulk create (one request, N issues; shared project/type/priority/labels/custom template)
+atlassian-cli jira bulk-create --project PROJ --summaries "task A,task B,task C" --issue-type Bug --priority High --confirm
+
+# Clone an issue (copies business fields, resets status/assignee; --link adds Cloners, --comment traces on source)
+atlassian-cli jira clone PROJ-123 --summary "CLONE - recurring task" --link --confirm
 ```
 
 ### Assign Issue & User Search

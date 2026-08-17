@@ -56,6 +56,10 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira suggest-fields` | List all available JQL fields & functions (official autocompletedata API) |
 | | `jira suggest-values --field F [--query Q]` | Resolve candidate values for a JQL field (users, projects, statuses, versions…) |
 | | `jira comment <KEY> <TEXT>` | Add a comment to an issue |
+| | `jira comment-update <KEY> <CID> <TEXT>` | Edit an existing comment (id from `jira get`) |
+| | `jira comment-delete <KEY> <CID>` | Delete a comment from an issue |
+| | `jira bulk-create --project P --summaries "a,b"` | Create N issues in one request (shared template, or `--from-file`) |
+| | `jira clone <KEY> [--project P] [--link]` | Clone issue: copy business fields, reset status/assignee (Cloners link optional) |
 | | `jira transition <KEY> <STATUS>` | Transition issue status (e.g. In Progress, Done) |
 | | `jira transitions <KEY/URL>` | Inspect all available status transitions & target statuses for an issue |
 | | `jira link <FROM> <TO> [--type "Relates"]` | Link two Jira issues together (supports Relates, Blocks, Cloners, Duplicate) |
