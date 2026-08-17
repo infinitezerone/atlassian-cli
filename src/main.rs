@@ -105,6 +105,8 @@ enum SkillSubActions {
     Install,
     /// 检查 Agent Skill 的部署状态与文件路径
     Status,
+    /// 从所有常见 Agent 目录卸载本 Skill (删除整个 skill 目录,含 references/)
+    Uninstall,
 }
 
 #[derive(Subcommand)]
@@ -197,6 +199,7 @@ async fn main() {
             match action.unwrap_or(SkillSubActions::Install) {
                 SkillSubActions::Install => skill::install_skill(),
                 SkillSubActions::Status => skill::skill_status(),
+                SkillSubActions::Uninstall => skill::uninstall_skill(),
             }
         }
         Commands::Schema { command } => schema::render(&Cli::command(), &command),
