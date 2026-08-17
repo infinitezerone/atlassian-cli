@@ -74,6 +74,16 @@ impl AtlassianModule for Jira {
                 custom_only,
                 limit,
             } => self.list_fields(query.as_deref(), custom_only, limit).await,
+            JiraActions::Projects { query } => self.list_projects(query.as_deref()).await,
+            JiraActions::IssueTypes { project, limit } => {
+                self.get_issue_types(project.as_deref(), limit).await
+            }
+            JiraActions::Watchers { key, add, remove } => {
+                self.manage_watchers(&key, add.as_deref(), remove.as_deref()).await
+            }
+            JiraActions::AttachmentDelete { key, attachment } => {
+                self.delete_attachment(&key, &attachment).await
+            }
             JiraActions::BulkCreate(a) => self.bulk_create_issues(&a).await,
             JiraActions::Clone(a) => self.clone_issue(&a).await,
         }

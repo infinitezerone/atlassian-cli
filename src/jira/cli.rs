@@ -210,6 +210,39 @@ pub enum JiraActions {
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },
+    /// 列出所有可见项目 (含 key/名称/类型)
+    Projects {
+        /// 名称关键字过滤 (可选)
+        #[arg(long, short = 'q')]
+        query: Option<String>,
+    },
+    /// 查询项目的创建元数据 (可用 issue 类型/子任务类型,避免猜类型名)
+    IssueTypes {
+        /// 项目 Key (可选,不传聚合所有可见项目的类型)
+        #[arg(long)]
+        project: Option<String>,
+        /// 最多返回条数 (默认 50)
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
+    /// 查看/添加/移除单子关注人 (不传 --add/--remove 时为查询)
+    Watchers {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 添加关注人用户名
+        #[arg(long)]
+        add: Option<String>,
+        /// 移除关注人用户名
+        #[arg(long)]
+        remove: Option<String>,
+    },
+    /// 删除单子上的附件 (支持 ID 或文件名)
+    AttachmentDelete {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 附件 ID 或文件名 (如 "12345" 或 "crash.log")
+        attachment: String,
+    },
     /// 批量创建单子 (一次请求创建多个,共享项目/类型/优先级等模板字段;官方 POST /issue/bulk)
     BulkCreate(BulkCreateArgs),
     /// 克隆单子到项目 (复制业务字段、重置状态/经办人,可选 Cloners 关联与原单留痕)

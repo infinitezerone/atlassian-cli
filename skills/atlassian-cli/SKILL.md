@@ -38,10 +38,13 @@ atlassian-cli --confirm jira comment PROJ-123 "Analysis completed."   # execute
 ```bash
 atlassian-cli jira get PROJ-123                       # issue + comments
 atlassian-cli jira search "project = PROJ AND status != Closed" --limit 10
+atlassian-cli jira projects                           # list projects (--query filter)
+atlassian-cli jira issue-types --project PROJ         # available issue types
 atlassian-cli jira user "John"                      # resolve mention_syntax [~username]
 atlassian-cli jira suggest-values --field assignee --query "John"   # JQL candidates
 atlassian-cli jira transitions PROJ-123               # available status moves
 atlassian-cli jira worklog-list PROJ-123
+atlassian-cli jira watchers PROJ-123                  # who's watching
 ```
 
 **Jira (write — always --confirm):**
