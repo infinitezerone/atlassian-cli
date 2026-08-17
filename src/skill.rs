@@ -51,14 +51,21 @@ pub fn install_skill() -> Result<Value, AppError> {
         // target_path = .../skills/atlassian-cli/SKILL.md → 其父目录即 skill 根目录
         if let Some(skill_dir) = target_path.parent() {
             let _ = fs::create_dir_all(skill_dir.join("references"));
+            // 写入顺序:先 references、最后 SKILL.md —— 若中途失败,SKILL.md 仍是旧的自包含版,
+            // 不会出现"新 SKILL.md 引用缺失 references"的不完整中间态(升级兼容加固)
             let mut all_ok = true;
-            for (rel, content) in SKILL_FILES {
+            for (rel, content) in SKILL_FILES.iter().filter(|(rel, _)| *rel != "SKILL.md") {
                 let full = skill_dir.join(rel);
                 if fs::write(&full, content).is_ok() {
                     total_bytes += content.len();
                 } else {
                     all_ok = false;
                 }
+            }
+            if fs::write(skill_dir.join("SKILL.md"), BUILTIN_SKILL).is_ok() {
+                total_bytes += BUILTIN_SKILL.len();
+            } else {
+                all_ok = false;
             }
             if all_ok {
                 let canonical = fs::canonicalize(target_path).unwrap_or_else(|_| target_path.clone());
