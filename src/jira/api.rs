@@ -371,6 +371,8 @@ impl Jira {
             fields.insert("labels".to_string(), json!(labels_vec));
         }
 
+        apply_custom_fields(&mut fields, &a.custom, a.custom_json.as_deref())?;
+
         let body = json!({ "fields": fields });
         if self.policy.dry_run {
             return Ok(crate::module::preview_json("jira.create", "POST", "/rest/api/2/issue", "(new issue)", Some(&body), None));
@@ -419,9 +421,11 @@ impl Jira {
             fields.insert("labels".to_string(), json!(labels_vec));
         }
 
+        apply_custom_fields(&mut fields, &a.custom, a.custom_json.as_deref())?;
+
         if fields.is_empty() {
             return Err(AppError::param_invalid(
-                "未提供任何需要更新的字段 (--summary, --description, --assignee, --priority, --labels)",
+                "未提供任何需要更新的字段 (--summary, --description, --assignee, --priority, --labels, --custom, --custom-json)",
             ));
         }
 
@@ -997,6 +1001,58 @@ fn filter_fields_json(raw: &Value, query: Option<&str>, custom_only: bool, limit
         .unwrap_or_default()
 }
 
+fn apply_custom_fields(
+    fields: &mut serde_json::Map<String, Value>,
+    custom_pairs: &[String],
+    custom_json_str: Option<&str>,
+) -> Result<(), AppError> {
+    for pair in custom_pairs {
+        let trimmed = pair.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let (k, v) = trimmed
+            .split_once('=')
+            .ok_or_else(|| AppError::param_invalid(format!("自定义字段格式必须为 KEY=VAL: '{}'", pair)))?;
+
+        let key = k.trim().to_string();
+        let val_str = v.trim();
+
+        // 尝试自动推断基本类型 (数字、布尔值)，否则保留为字符串
+        let val_json: Value = if let Ok(num) = val_str.parse::<i64>() {
+            json!(num)
+        } else if let Ok(num_f) = val_str.parse::<f64>() {
+            json!(num_f)
+        } else if let Ok(b) = val_str.parse::<bool>() {
+            json!(b)
+        } else if val_str.starts_with('{') || val_str.starts_with('[') {
+            serde_json::from_str(val_str).unwrap_or_else(|_| json!(val_str))
+        } else {
+            json!(val_str)
+        };
+
+        fields.insert(key, val_json);
+    }
+
+    if let Some(json_s) = custom_json_str {
+        let trimmed = json_s.trim();
+        if !trimmed.is_empty() {
+            let parsed: Value = serde_json::from_str(trimmed).map_err(|e| {
+                AppError::param_invalid(format!("--custom-json 解析失败: {}", e))
+            })?;
+            if let Some(obj) = parsed.as_object() {
+                for (k, v) in obj {
+                    fields.insert(k.clone(), v.clone());
+                }
+            } else {
+                return Err(AppError::param_invalid("--custom-json 顶层必须为 JSON Object (如 '{\"customfield_10020\": ...}')"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn format_jira_started_time(s: &str) -> String {
     let trimmed = s.trim();
     if trimmed.contains('T') || trimmed.contains('+') {
@@ -1016,6 +1072,24 @@ mod tests {
     fn test_format_jira_started_time() {
         assert_eq!(format_jira_started_time("2026-08-13"), "2026-08-13T09:00:00.000+0800");
         assert_eq!(format_jira_started_time("2026-08-13T10:00:00.000+0800"), "2026-08-13T10:00:00.000+0800");
+    }
+
+    #[test]
+    fn test_apply_custom_fields() {
+        let mut fields = serde_json::Map::new();
+        let pairs = vec![
+            "customfield_10020=5".to_string(),
+            "customfield_10010=PROJ-10".to_string(),
+            "customfield_bool=true".to_string(),
+        ];
+        let json_extra = Some("{\"customfield_obj\": {\"id\": \"123\"}}");
+
+        apply_custom_fields(&mut fields, &pairs, json_extra).unwrap();
+
+        assert_eq!(fields["customfield_10020"], json!(5));
+        assert_eq!(fields["customfield_10010"], json!("PROJ-10"));
+        assert_eq!(fields["customfield_bool"], json!(true));
+        assert_eq!(fields["customfield_obj"]["id"], json!("123"));
     }
 
     #[test]

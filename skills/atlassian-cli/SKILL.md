@@ -68,11 +68,11 @@ atlassian-cli jira transition PROJ-123 "Done" --confirm
 
 ### Create & Update Issues
 ```bash
-# Create Issue
-atlassian-cli jira create --project PROJ --summary "Fix login timeout bug" --issue-type Bug --assignee john.doe --priority High --confirm
+# Create Issue (supports custom fields via --custom and --custom-json)
+atlassian-cli jira create --project PROJ --summary "Fix login timeout bug" --issue-type Bug --assignee john.doe --priority High --custom "customfield_10020=5" --confirm
 
 # Update Issue fields
-atlassian-cli jira update PROJ-123 --summary "Updated title" --priority Medium --labels "backend,urgent" --confirm
+atlassian-cli jira update PROJ-123 --summary "Updated title" --priority Medium --labels "backend,urgent" --custom "customfield_10010=PROJ-10" --confirm
 ```
 
 ### Assign Issue & User Search
@@ -188,39 +188,43 @@ atlassian-cli confluence get 12345678 --raw
 atlassian-cli confluence create --space PROJ --title "Release Notes 6.2.0" \
   --body "Release date: <time datetime=\"2026-08-13\"/>\nRelated ticket: <ac:structured-macro ac:name=\"jira\"><ac:parameter ac:name=\"key\">PROJ-123</ac:parameter></ac:structured-macro>"
 
-# Local search & replace update (token-efficient, unique 1-match safety)
-atlassian-cli confluence update 12345678 --find "Target Version: v1.0" --replace "Target Version: v2.0" --confirm
+# Update page: find & replace (strictly requires exact 1 occurrence to avoid corrupting text)
+atlassian-cli confluence update 12345678 --find "v6.1.0" --replace "v6.2.0" --confirm
 
-# Preview update diff without committing (--dry-run)
-atlassian-cli confluence update 12345678 --find "v1.0" --replace "v2.0" --dry-run
-
-# Append new section to page tail
-atlassian-cli confluence update 12345678 --append "## Discussion Notes\n- Approved by team"
+# Update page: append content at bottom / prepend at top
+atlassian-cli confluence update 12345678 --append "\n## Appendix\nAdditional deployment steps." --confirm
 ```
 
 ---
 
-## 4. Bitbucket Workflow Commands (Code Review)
+## 4. Bitbucket Workflow Commands
 
-### List & Create Pull Requests
+### List PRs & Create PR
 ```bash
-# List OPEN PRs in a repository (supports repo webpage URL)
-atlassian-cli bitbucket list-prs --url "https://gitpub.example.com/projects/PROJ/repos/my-repo" --state OPEN
+# List open PRs by project & repository (accepts repo URL)
+atlassian-cli bitbucket list-prs --project PROJ --repo my-repo --state OPEN
+atlassian-cli bitbucket list-prs --url https://gitpub.example.com/projects/PROJ/repos/my-repo
 
 # Create Pull Request (auto-loads web default reviewers, supports extra --reviewers)
 atlassian-cli bitbucket create-pr --project PROJ --repo my-repo --title "Fix login timeout" --from feature/login-fix --to main --reviewers "john.doe, jane.smith" --confirm
 ```
 
-### Inspect PR Details & Code Diffs
+### Inspect PR Details & Code Diffs (Token-Budget Friendly)
 ```bash
 # Get PR overview (accepts PR ID or direct webpage URL)
-atlassian-cli bitbucket get-pr https://gitpub.example.com/projects/PROJ/repos/my-repo/pull-requests/100
+atlassian-cli bitbucket get-pr 100
 
-# View PR code diff & changed file list
-atlassian-cli bitbucket diff-pr https://gitpub.example.com/projects/PROJ/repos/my-repo/pull-requests/100
+# View changed files overview only (--stat, 0-diff body, ultra token saver!)
+atlassian-cli bitbucket diff-pr 100 --stat
+
+# Precise single-file diff review (avoiding huge diff context dumps)
+atlassian-cli bitbucket diff-pr 100 --file "src/main/java/App.java"
+
+# View PR code diff with line budget limit & pagination
+atlassian-cli bitbucket diff-pr 100 --max-lines 500 --offset 0
 
 # View PR comment tree & discussions
-atlassian-cli bitbucket comments-pr https://gitpub.example.com/projects/PROJ/repos/my-repo/pull-requests/100
+atlassian-cli bitbucket comments-pr 100
 ```
 
 ### Post Code Review Comments & Approve PR

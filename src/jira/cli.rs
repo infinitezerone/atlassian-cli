@@ -38,6 +38,12 @@ pub struct CreateIssueArgs {
     /// 优先级 (Priority，如 High / Medium / Low)
     #[arg(long)]
     pub priority: Option<String>,
+    /// 自定义字段赋值 (支持多次传入,如 --custom "customfield_10020=5" --custom "customfield_10010=PROJ-10")
+    #[arg(long, value_name = "KEY=VAL")]
+    pub custom: Vec<String>,
+    /// 原始自定义字段 JSON 对象 (如 '{"customfield_10020": ["sprint-1"]}')
+    #[arg(long, value_name = "JSON_OBJECT")]
+    pub custom_json: Option<String>,
 }
 
 #[derive(Args)]
@@ -59,6 +65,12 @@ pub struct UpdateIssueArgs {
     /// 标签列表 (英文逗号分隔，如 "bug,backend")
     #[arg(long)]
     pub labels: Option<String>,
+    /// 自定义字段赋值 (支持多次传入,如 --custom "customfield_10020=5" --custom "customfield_10010=PROJ-10")
+    #[arg(long, value_name = "KEY=VAL")]
+    pub custom: Vec<String>,
+    /// 原始自定义字段 JSON 对象 (如 '{"customfield_10020": ["sprint-1"]}')
+    #[arg(long, value_name = "JSON_OBJECT")]
+    pub custom_json: Option<String>,
 }
 
 /// Jira 模块的 CLI 子命令

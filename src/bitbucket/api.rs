@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::cli::{CommentPrArgs, CreatePrArgs, GetPrArgs, ListPrsArgs};
+use super::cli::{CommentPrArgs, CreatePrArgs, DiffPrArgs, GetPrArgs, ListPrsArgs};
 use crate::error::AppError;
 use crate::http::HttpClient;
 use crate::module::WritePolicy;
@@ -155,7 +155,7 @@ impl Bitbucket {
     }
 
     /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/changes 与 /diff
-    pub async fn get_pr_diff(&self, a: &GetPrArgs) -> Result<Value, AppError> {
+    pub async fn get_pr_diff(&self, a: &DiffPrArgs) -> Result<Value, AppError> {
         let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
 
         let changes_path = format!(
@@ -166,7 +166,7 @@ impl Bitbucket {
         );
         let changes_raw = self
             .http
-            .get_with_query(&changes_path, &[("limit", "100")])
+            .get_with_query(&changes_path, &[("limit", "200")])
             .await?;
 
         let files: Vec<Value> = changes_raw["values"]
@@ -186,6 +186,18 @@ impl Bitbucket {
             })
             .unwrap_or_default();
 
+        // 如果用户指定了 --stat，则只返回变动文件清单与总数，0 字节拉取全量 diff (极度节省 Token)
+        if a.stat {
+            return Ok(json!({
+                "pr_id": pr_id,
+                "project": project,
+                "repo": repo,
+                "stat_only": true,
+                "changed_files_count": files.len(),
+                "files": files,
+            }));
+        }
+
         let diff_path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/diff",
             urlencoding::encode(&project),
@@ -194,62 +206,94 @@ impl Bitbucket {
         );
         let diff_raw = self.http.get(&diff_path).await;
 
+        let file_filter = a.file.as_deref().map(str::trim).filter(|s| !s.is_empty());
+
+        let mut total_lines_accum = 0usize;
+        let mut lines_collected = 0usize;
+        let max_lines = if a.max_lines == 0 { usize::MAX } else { a.max_lines };
+        let offset = a.offset;
+
         let diffs = match diff_raw {
             Ok(raw) => raw["diffs"]
                 .as_array()
                 .map(|arr| {
                     arr.iter()
-                        .take(20)
-                        .map(|d| {
+                        .filter_map(|d| {
                             let src = d["source"]["toString"].as_str();
                             let dst = d["destination"]["toString"].as_str();
                             let file_name = dst.or(src).unwrap_or("");
+
+                            // 文件名过滤 (精确匹配或后缀路径匹配)
+                            if let Some(target) = file_filter {
+                                if file_name != target && !file_name.ends_with(&format!("/{}", target)) {
+                                    return None;
+                                }
+                            }
+
                             let hunks = d["hunks"]
                                 .as_array()
                                 .map(|harr| {
                                     harr.iter()
-                                        .map(|h| {
+                                        .filter_map(|h| {
                                             let segments = h["segments"]
                                                 .as_array()
                                                 .map(|sarr| {
                                                     sarr.iter()
-                                                        .map(|seg| {
+                                                        .filter_map(|seg| {
                                                             let stype = seg["type"].as_str().unwrap_or("");
                                                             let lines: Vec<String> = seg["lines"]
                                                                 .as_array()
                                                                 .map(|larr| {
                                                                     larr.iter()
                                                                         .filter_map(|l| {
-                                                                            l["line"]
-                                                                                .as_str()
-                                                                                .map(|s| s.to_string())
+                                                                            l["line"].as_str().map(|s| s.to_string())
                                                                         })
                                                                         .collect()
                                                                 })
                                                                 .unwrap_or_default();
-                                                            json!({
+
+                                                            let segment_line_count = lines.len();
+                                                            total_lines_accum += segment_line_count;
+
+                                                            // 截断与分页控制
+                                                            if total_lines_accum <= offset {
+                                                                return None;
+                                                            }
+                                                            if lines_collected >= max_lines {
+                                                                return None;
+                                                            }
+
+                                                            let lines_to_take = (max_lines - lines_collected).min(segment_line_count);
+                                                            lines_collected += lines_to_take;
+
+                                                            Some(json!({
                                                                 "type": stype,
-                                                                "lines_count": lines.len(),
-                                                                "snippet": lines.iter().take(15).cloned().collect::<Vec<_>>(),
-                                                            })
+                                                                "lines_count": segment_line_count,
+                                                                "snippet": lines.iter().take(lines_to_take).cloned().collect::<Vec<_>>(),
+                                                            }))
                                                         })
                                                         .collect::<Vec<_>>()
                                                 })
                                                 .unwrap_or_default();
-                                            json!({
-                                                "source_line": h["sourceLine"],
-                                                "destination_line": h["destinationLine"],
-                                                "segments": segments,
-                                            })
+
+                                            if segments.is_empty() {
+                                                None
+                                            } else {
+                                                Some(json!({
+                                                    "source_line": h["sourceLine"],
+                                                    "destination_line": h["destinationLine"],
+                                                    "segments": segments,
+                                                }))
+                                            }
                                         })
                                         .collect::<Vec<_>>()
                                 })
                                 .unwrap_or_default();
 
-                            json!({
+                            Some(json!({
                                 "file": file_name,
                                 "hunks": hunks,
-                            })
+                            }))
                         })
                         .collect::<Vec<_>>()
                 })
@@ -257,12 +301,18 @@ impl Bitbucket {
             Err(_) => Vec::new(),
         };
 
+        let truncated = total_lines_accum > offset + lines_collected;
+
         Ok(json!({
             "pr_id": pr_id,
             "project": project,
             "repo": repo,
+            "file_filter": file_filter.unwrap_or(""),
             "changed_files_count": files.len(),
             "files": files,
+            "total_lines": total_lines_accum,
+            "lines_returned": lines_collected,
+            "truncated": truncated,
             "diffs": diffs,
         }))
     }

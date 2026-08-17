@@ -31,10 +31,35 @@ pub fn require_confirmed(policy: &WritePolicy) -> Result<(), AppError> {
     if policy.confirm {
         Ok(())
     } else {
+        let suggested_cmd = build_suggested_confirm_command();
         Err(AppError::param_invalid("写操作需要显式确认")
             .with_detail("确认执行请追加 --confirm;仅预览请追加 --dry-run")
-            .with_suggestion("确认执行请追加 --confirm;仅预览请追加 --dry-run"))
+            .with_suggestion("确认执行请追加 --confirm;仅预览请追加 --dry-run")
+            .with_suggested_command(suggested_cmd))
     }
+}
+
+/// 重建包含 --confirm 的完整执行命令行 (供 AI Agent 0 思考成本直接调用)
+fn build_suggested_confirm_command() -> String {
+    let args: Vec<String> = std::env::args().collect();
+    let bin_name = args
+        .first()
+        .and_then(|p| std::path::Path::new(p).file_name()?.to_str())
+        .unwrap_or("atlassian-cli");
+
+    let mut clean_args = Vec::new();
+    for a in args.iter().skip(1) {
+        if a == "--dry-run" {
+            continue;
+        }
+        if a.contains(' ') || a.contains('"') || a.is_empty() {
+            clean_args.push(format!("\"{}\"", a.replace('"', "\\\"")));
+        } else {
+            clean_args.push(a.clone());
+        }
+    }
+    clean_args.push("--confirm".to_string());
+    format!("{} {}", bin_name, clean_args.join(" "))
 }
 
 /// 构造统一的写操作 dry-run 预览 JSON(零副作用)。
@@ -140,6 +165,7 @@ mod tests {
         assert_eq!(e.code, ErrorCode::ParamInvalid);
         assert_eq!(e.code.exit_code(), 2);
         assert!(e.detail.as_deref().unwrap().contains("--confirm"));
+        assert!(e.suggested_command.as_deref().unwrap().contains("--confirm"));
     }
 
     #[test]
