@@ -6,6 +6,26 @@ use std::path::PathBuf;
 /// 编译时直接零依赖嵌入 skills/atlassian-cli/SKILL.md
 pub const BUILTIN_SKILL: &str = include_str!("../skills/atlassian-cli/SKILL.md");
 
+/// 渐进式披露:SKILL.md 精简,细节拆到 references/ 按需加载(同样 include_str 打进单二进制)
+const BUILTIN_REF_JIRA: &str = include_str!("../skills/atlassian-cli/references/jira-commands.md");
+const BUILTIN_REF_CONFLUENCE: &str =
+    include_str!("../skills/atlassian-cli/references/confluence-commands.md");
+const BUILTIN_REF_BITBUCKET: &str =
+    include_str!("../skills/atlassian-cli/references/bitbucket-commands.md");
+const BUILTIN_REF_ERROR_CODES: &str =
+    include_str!("../skills/atlassian-cli/references/error-codes.md");
+const BUILTIN_REF_ADVANCED: &str = include_str!("../skills/atlassian-cli/references/advanced.md");
+
+/// (相对路径, 内容) 清单:install 时逐个写入各 agent 的 skill 目录
+const SKILL_FILES: &[(&str, &str)] = &[
+    ("SKILL.md", BUILTIN_SKILL),
+    ("references/jira-commands.md", BUILTIN_REF_JIRA),
+    ("references/confluence-commands.md", BUILTIN_REF_CONFLUENCE),
+    ("references/bitbucket-commands.md", BUILTIN_REF_BITBUCKET),
+    ("references/error-codes.md", BUILTIN_REF_ERROR_CODES),
+    ("references/advanced.md", BUILTIN_REF_ADVANCED),
+];
+
 /// 常见主流 AI Agent 框架与 CLI 的 Skill 部署相对路径清单
 const COMMON_SKILL_REL_PATHS: &[&str] = &[
     ".gemini/config/skills/atlassian-cli/SKILL.md", // Google Antigravity / Gemini CLI
@@ -21,18 +41,29 @@ pub fn get_skill_paths() -> Result<Vec<PathBuf>, AppError> {
     Ok(COMMON_SKILL_REL_PATHS.iter().map(|p| home.join(p)).collect())
 }
 
-/// 自动将官方 Agent Skill 覆盖同步部署到所有常见的 AI Agent 配置目录
+/// 自动将官方 Agent Skill(含 references/)覆盖同步部署到所有常见的 AI Agent 配置目录
 pub fn install_skill() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
     let mut installed_paths: Vec<String> = Vec::new();
+    let mut total_bytes = 0usize;
 
     for target_path in &paths {
-        if let Some(parent) = target_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        if fs::write(target_path, BUILTIN_SKILL).is_ok() {
-            let canonical = fs::canonicalize(target_path).unwrap_or(target_path.clone());
-            installed_paths.push(canonical.to_string_lossy().to_string());
+        // target_path = .../skills/atlassian-cli/SKILL.md → 其父目录即 skill 根目录
+        if let Some(skill_dir) = target_path.parent() {
+            let _ = fs::create_dir_all(skill_dir.join("references"));
+            let mut all_ok = true;
+            for (rel, content) in SKILL_FILES {
+                let full = skill_dir.join(rel);
+                if fs::write(&full, content).is_ok() {
+                    total_bytes += content.len();
+                } else {
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let canonical = fs::canonicalize(target_path).unwrap_or_else(|_| target_path.clone());
+                installed_paths.push(canonical.to_string_lossy().to_string());
+            }
         }
     }
 
@@ -41,8 +72,9 @@ pub fn install_skill() -> Result<Value, AppError> {
         "action": "install_skill",
         "installed_count": installed_paths.len(),
         "installed_paths": installed_paths,
-        "bytes_written_per_file": BUILTIN_SKILL.len(),
-        "message": "官方 Agent Skill 已成功同步部署到 Gemini / Antigravity, Claude Code, Open-Agents, Cursor, Windsurf 全量常见 AI Agent 目录！"
+        "files_installed": SKILL_FILES.len(),
+        "bytes_written_total": total_bytes,
+        "message": "官方 Agent Skill(含按需加载的 references/)已成功同步部署到 Gemini / Antigravity, Claude Code, Open-Agents, Cursor, Windsurf 全量常见 AI Agent 目录！"
     }))
 }
 
@@ -56,11 +88,17 @@ pub fn skill_status() -> Result<Value, AppError> {
         let exists = target_path.exists();
         if exists {
             installed_count += 1;
-            let canonical = fs::canonicalize(target_path).unwrap_or(target_path.clone());
+            // references 完整性:除 SKILL.md 外全部文件应存在
+            let refs_ok = SKILL_FILES
+                .iter()
+                .skip(1)
+                .all(|(rel, _)| target_path.parent().map(|d| d.join(rel).exists()).unwrap_or(false));
+            let canonical = fs::canonicalize(target_path).unwrap_or_else(|_| target_path.clone());
             let meta = fs::metadata(target_path).ok();
             status_list.push(json!({
                 "path": canonical.to_string_lossy(),
                 "installed": true,
+                "references_complete": refs_ok,
                 "file_size_bytes": meta.map(|m| m.len()).unwrap_or(0),
             }));
         } else {
@@ -89,6 +127,19 @@ mod tests {
         assert!(!BUILTIN_SKILL.is_empty());
         assert!(BUILTIN_SKILL.contains("atlassian-cli"));
         assert!(BUILTIN_SKILL.contains("jira"));
+        // 精简版 SKILL.md 应引用 references(渐进式披露)
+        assert!(BUILTIN_SKILL.contains("references/"));
+    }
+
+    #[test]
+    fn test_builtin_references_not_empty() {
+        assert!(BUILTIN_REF_JIRA.contains("worklog-add"));
+        assert!(BUILTIN_REF_JIRA.contains("bulk-create"));
+        assert!(BUILTIN_REF_CONFLUENCE.contains("confluence update"));
+        assert!(BUILTIN_REF_BITBUCKET.contains("approve-pr"));
+        assert!(BUILTIN_REF_ERROR_CODES.contains("AUTH_EXPIRED"));
+        assert!(BUILTIN_REF_ADVANCED.contains("idempotent_replay"));
+        assert_eq!(SKILL_FILES.len(), 6, "SKILL.md + 5 个 references");
     }
 
     #[test]
