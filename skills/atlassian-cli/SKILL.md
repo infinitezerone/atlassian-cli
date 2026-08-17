@@ -7,6 +7,8 @@ description: Operate self-hosted Atlassian (Jira / Confluence / Bitbucket Server
 
 Use `atlassian-cli` to interact with self-hosted (Data Center / Server) Jira, Confluence, and Bitbucket instances. All output is JSON — machine-parseable, no guessing.
 
+**Token saving**: append `--compact` to any command for single-line compact JSON (default is pretty-printed). Prefer `--compact` when piping into analysis.
+
 ## 1. Quick Start
 
 ### Environment Verification
