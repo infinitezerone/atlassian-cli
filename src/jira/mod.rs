@@ -33,6 +33,12 @@ impl AtlassianModule for Jira {
         match action {
             JiraActions::Get(a) => self.get_issue(&a).await,
             JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,
+            JiraActions::CommentUpdate { key, comment_id, text } => {
+                self.update_comment(&key, &comment_id, &text).await
+            }
+            JiraActions::CommentDelete { key, comment_id } => {
+                self.delete_comment(&key, &comment_id).await
+            }
             JiraActions::Transition { key, status } => self.transition(&key, &status).await,
             JiraActions::Search { jql, limit, fields, start_at } => {
                 self.search_issues(&jql, limit, fields.as_deref(), start_at).await
@@ -68,6 +74,8 @@ impl AtlassianModule for Jira {
                 custom_only,
                 limit,
             } => self.list_fields(query.as_deref(), custom_only, limit).await,
+            JiraActions::BulkCreate(a) => self.bulk_create_issues(&a).await,
+            JiraActions::Clone(a) => self.clone_issue(&a).await,
         }
     }
 }
