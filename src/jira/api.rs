@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use super::cli::{
-    AddWorklogArgs, CreateIssueArgs, DeleteWorklogArgs, GetIssueArgs, ListWorklogsArgs,
-    UpdateIssueArgs,
+    AddWorklogArgs, BulkCreateArgs, CloneArgs, CreateIssueArgs, DeleteWorklogArgs, GetIssueArgs,
+    ListWorklogsArgs, UpdateIssueArgs,
 };
 use crate::error::AppError;
 use crate::http::HttpClient;
@@ -143,6 +143,63 @@ impl Jira {
             "issue": key,
             "comment_id": raw["id"],
             "author": raw["author"]["displayName"],
+        }))
+    }
+
+    /// PUT /rest/api/2/issue/{key}/comment/{id} (编辑已有评论)
+    pub async fn update_comment(
+        &self,
+        key_or_url: &str,
+        comment_id: &str,
+        text: &str,
+    ) -> Result<Value, AppError> {
+        // 提及语法校验:编辑后的内容同样校验
+        crate::utils::validate_mentions(text)?;
+        let key = parse_jira_key(key_or_url);
+        let enc_key = urlencoding::encode(&key);
+        let enc_id = urlencoding::encode(comment_id.trim());
+        let path = format!("/rest/api/2/issue/{}/comment/{}", enc_key, enc_id);
+        let body = json!({ "body": text });
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.comment-update", "PUT", &path, &key, Some(&body), None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.put(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+        Ok(json!({
+            "status": "success",
+            "issue": key,
+            "comment_id": comment_id.trim(),
+            "updated": true,
+            "author": raw["author"]["displayName"],
+        }))
+    }
+
+    /// DELETE /rest/api/2/issue/{key}/comment/{id} (删除评论)
+    pub async fn delete_comment(
+        &self,
+        key_or_url: &str,
+        comment_id: &str,
+    ) -> Result<Value, AppError> {
+        let key = parse_jira_key(key_or_url);
+        let enc_key = urlencoding::encode(&key);
+        let enc_id = urlencoding::encode(comment_id.trim());
+        let path = format!("/rest/api/2/issue/{}/comment/{}", enc_key, enc_id);
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json("jira.comment-delete", "DELETE", &path, &key, None, None));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.delete(&path).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+        Ok(json!({
+            "status": "success",
+            "issue": key,
+            "comment_id": comment_id.trim(),
+            "deleted": true,
         }))
     }
 
@@ -389,6 +446,251 @@ impl Jira {
             "key": key,
             "id": raw["id"],
             "link": format!("{}/browse/{}", self.http.base_url(), key),
+        }))
+    }
+
+    /// POST /rest/api/2/issue/bulk (一次请求批量创建多个单子,官方支持)
+    pub async fn bulk_create_issues(&self, a: &BulkCreateArgs) -> Result<Value, AppError> {
+        // 收集标题列表:--summaries 逗号分隔 + --from-file 每行
+        let mut summaries: Vec<String> = Vec::new();
+        if let Some(s) = &a.summaries {
+            for part in s.split(',') {
+                let t = part.trim();
+                if !t.is_empty() {
+                    summaries.push(t.to_string());
+                }
+            }
+        }
+        if let Some(f) = &a.from_file {
+            let content = std::fs::read_to_string(f)
+                .map_err(|e| AppError::param_invalid(format!("读取文件失败 {}: {}", f, e)))?;
+            for line in content.lines() {
+                let t = line.trim();
+                if !t.is_empty() {
+                    summaries.push(t.to_string());
+                }
+            }
+        }
+        if summaries.is_empty() {
+            return Err(AppError::param_invalid(
+                "未提供任何单子标题: 请用 --summaries \"a,b,c\" 或 --from-file file.txt",
+            ));
+        }
+
+        // 共享字段模板(project/type/priority/labels/assignee/custom 等对所有批量单子一致)
+        let mut fields = serde_json::Map::new();
+        fields.insert("project".to_string(), json!({ "key": a.project }));
+        fields.insert("issuetype".to_string(), json!({ "name": a.issue_type }));
+        if let Some(ref desc) = a.description {
+            crate::utils::validate_mentions(desc)?;
+            fields.insert("description".to_string(), json!(desc));
+        }
+        if let Some(ref assignee) = a.assignee {
+            let clean = parse_username(assignee);
+            fields.insert("assignee".to_string(), json!({ "name": clean }));
+        }
+        if let Some(ref priority) = a.priority {
+            fields.insert("priority".to_string(), json!({ "name": priority }));
+        }
+        if let Some(ref labels_str) = a.labels {
+            let labels_vec: Vec<&str> = labels_str
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            fields.insert("labels".to_string(), json!(labels_vec));
+        }
+        apply_custom_fields(&mut fields, &a.custom, a.custom_json.as_deref())?;
+
+        let issue_updates: Vec<Value> = summaries
+            .iter()
+            .map(|s| {
+                let mut f = fields.clone();
+                f.insert("summary".to_string(), json!(s));
+                json!({ "fields": f })
+            })
+            .collect();
+
+        let body = json!({ "issueUpdates": issue_updates });
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json(
+                "jira.bulk-create",
+                "POST",
+                "/rest/api/2/issue/bulk",
+                &format!("{} issues", summaries.len()),
+                Some(&body),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.post("/rest/api/2/issue/bulk", body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+
+        let issues: Vec<Value> = raw["issues"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|i| {
+                        json!({
+                            "key": i["key"],
+                            "id": i["id"],
+                            "link": format!("{}/browse/{}", self.http.base_url(), i["key"].as_str().unwrap_or("")),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let errors: Vec<Value> = raw["errors"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|e| {
+                        json!({
+                            "element": e["failedElementNumber"],
+                            "errors": e["errors"],
+                            "error_messages": e["errorMessages"],
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(json!({
+            "status": "success",
+            "requested": summaries.len(),
+            "created": issues.len(),
+            "failed": errors.len(),
+            "issues": issues,
+            "errors": errors,
+            "hint": if errors.is_empty() {
+                json!("")
+            } else {
+                json!(format!("{} 个创建失败,见 errors 字段", errors.len()))
+            },
+        }))
+    }
+
+    /// GET /rest/api/2/issue/{key} + POST /rest/api/2/issue (克隆单子:复制业务字段、重置状态/经办人)
+    pub async fn clone_issue(&self, a: &CloneArgs) -> Result<Value, AppError> {
+        let src_key = parse_jira_key(&a.source);
+        let enc_src = urlencoding::encode(&src_key);
+
+        // 1. 读取源单字段(显式字段列表,避免 *all 超大响应)
+        let mut field_list = vec![
+            "summary", "description", "issuetype", "priority", "labels",
+            "components", "fixVersions", "duedate", "environment",
+        ];
+        if let Some(extra) = &a.extra_fields {
+            for f in extra.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                field_list.push(f);
+            }
+        }
+        let fields_q = field_list.join(",");
+        let raw = self
+            .http
+            .get_with_query(&format!("/rest/api/2/issue/{}", enc_src), &[("fields", &fields_q)])
+            .await?;
+        let src_fields = &raw["fields"];
+
+        // 2. 构造新单字段:只复制业务字段;status/assignee/reporter/comments/worklog/附件一律重置
+        let mut new_fields = serde_json::Map::new();
+        let target_project = a
+            .project
+            .as_deref()
+            .unwrap_or(src_fields["project"]["key"].as_str().unwrap_or(""));
+        new_fields.insert("project".to_string(), json!({ "key": target_project }));
+        new_fields.insert(
+            "summary".to_string(),
+            json!(a.summary.clone().unwrap_or_else(|| src_fields["summary"]
+                .as_str()
+                .unwrap_or("")
+                .to_string())),
+        );
+        for f in ["issuetype", "priority"] {
+            if let Some(id) = src_fields[f]["id"].as_str() {
+                new_fields.insert(f.to_string(), json!({ "id": id }));
+            } else if let Some(name) = src_fields[f]["name"].as_str() {
+                new_fields.insert(f.to_string(), json!({ "name": name }));
+            }
+        }
+        for f in ["labels", "components", "fixVersions"] {
+            if !src_fields[f].is_null() {
+                new_fields.insert(f.to_string(), src_fields[f].clone());
+            }
+        }
+        for f in ["description", "duedate", "environment"] {
+            if let Some(v) = src_fields[f].as_str() {
+                if !v.is_empty() {
+                    crate::utils::validate_mentions(v)?;
+                    new_fields.insert(f.to_string(), json!(v));
+                }
+            }
+        }
+        if let Some(extra) = &a.extra_fields {
+            for f in extra.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                if !src_fields[f].is_null() {
+                    new_fields.insert(f.to_string(), src_fields[f].clone());
+                }
+            }
+        }
+
+        let body = json!({ "fields": new_fields });
+        if self.policy.dry_run {
+            return Ok(crate::module::preview_json(
+                "jira.clone",
+                "POST",
+                "/rest/api/2/issue",
+                &src_key,
+                Some(&body),
+                None,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+        let raw = self.http.post("/rest/api/2/issue", body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+        let new_key = raw["key"].as_str().unwrap_or("").to_string();
+
+        // 3. 可选副作用:Cloners 关联 + 源单留痕评论
+        let mut cloners_link = false;
+        let mut trace_comment = false;
+        if a.link {
+            let link_body = json!({
+                "type": { "name": "Cloners" },
+                "inwardIssue": { "key": new_key },
+                "outwardIssue": { "key": src_key },
+            });
+            if self.http.post("/rest/api/2/issueLink", link_body).await.is_ok() {
+                cloners_link = true;
+            }
+        }
+        if a.comment {
+            let note = format!("此单已克隆为 {}. 由 atlassian-cli jira clone 自动留痕。", new_key);
+            if self
+                .http
+                .post(
+                    &format!("/rest/api/2/issue/{}/comment", enc_src),
+                    json!({ "body": note }),
+                )
+                .await
+                .is_ok()
+            {
+                trace_comment = true;
+            }
+        }
+
+        Ok(json!({
+            "status": "success",
+            "source": src_key,
+            "key": new_key,
+            "id": raw["id"],
+            "link": format!("{}/browse/{}", self.http.base_url(), new_key),
+            "cloners_link": cloners_link,
+            "trace_comment": trace_comment,
         }))
     }
 

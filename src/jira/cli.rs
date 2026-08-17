@@ -80,6 +80,22 @@ pub enum JiraActions {
     Get(GetIssueArgs),
     /// 在单子里加评论
     Comment { key: String, text: String },
+    /// 编辑单子上的已有评论 (需先通过 jira get 获取 comment_id)
+    CommentUpdate {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 评论 ID (jira get 返回的 comments[].id)
+        comment_id: String,
+        /// 新的评论内容
+        text: String,
+    },
+    /// 删除单子上的评论 (需先通过 jira get 获取 comment_id)
+    CommentDelete {
+        /// 单子 Key 或网页 URL
+        key: String,
+        /// 评论 ID (jira get 返回的 comments[].id)
+        comment_id: String,
+    },
     /// 流转单子状态 (按状态名,如 In Progress / Done)
     Transition { key: String, status: String },
     /// JQL 条件搜索单子 (如 "assignee = currentUser() AND status != Closed")
@@ -194,6 +210,71 @@ pub enum JiraActions {
         #[arg(long, default_value_t = 50)]
         limit: u32,
     },
+    /// 批量创建单子 (一次请求创建多个,共享项目/类型/优先级等模板字段;官方 POST /issue/bulk)
+    BulkCreate(BulkCreateArgs),
+    /// 克隆单子到项目 (复制业务字段、重置状态/经办人,可选 Cloners 关联与原单留痕)
+    Clone(CloneArgs),
+}
+
+#[derive(Args)]
+pub struct BulkCreateArgs {
+    /// Jira 项目 Key (如 PROJ 或 PROJSA)
+    #[arg(long)]
+    pub project: String,
+    /// 多个单子标题 (英文逗号分隔,如 "task A,task B,task C")
+    #[arg(long)]
+    pub summaries: Option<String>,
+    /// 从文件读取单子标题 (每行一个,可与 --summaries 合并)
+    #[arg(long)]
+    pub from_file: Option<String>,
+    /// 单子类型 (默认 Task)
+    #[arg(long, default_value = "Task")]
+    pub issue_type: String,
+    /// 单子详细描述 (共享给所有批量单子)
+    #[arg(long)]
+    pub description: Option<String>,
+    /// 标签列表 (英文逗号分隔,共享)
+    #[arg(long)]
+    pub labels: Option<String>,
+    /// 指派人用户名 (共享)
+    #[arg(long)]
+    pub assignee: Option<String>,
+    /// 优先级 (共享)
+    #[arg(long)]
+    pub priority: Option<String>,
+    /// 自定义字段赋值 (支持多次传入,共享)
+    #[arg(long, value_name = "KEY=VAL")]
+    pub custom: Vec<String>,
+    /// 原始自定义字段 JSON 对象 (共享)
+    #[arg(long, value_name = "JSON_OBJECT")]
+    pub custom_json: Option<String>,
+}
+
+#[derive(Args)]
+pub struct CloneArgs {
+    /// 源单子 Key 或网页 URL (如 PROJSA-123)
+    pub source: String,
+    /// 目标项目 Key (默认沿用源单项目)
+    #[arg(long)]
+    pub project: Option<String>,
+    /// 新单子标题 (默认沿用源标题;建议加 CLONE 前缀便于区分)
+    #[arg(long)]
+    pub summary: Option<String>,
+    /// 复制核心字段:summary/description/issuetype/priority/labels/components/fixVersions/duedate/environment (默认)
+    #[arg(long)]
+    pub core_only: bool,
+    /// 追加复制的自定义字段 (逗号分隔,如 "customfield_10020,customfield_10010")
+    #[arg(long)]
+    pub extra_fields: Option<String>,
+    /// 创建 Cloners 关联 (新单 ↔ 源单)
+    #[arg(long)]
+    pub link: bool,
+    /// 在源单上追加留痕评论 (说明被克隆到哪个新单)
+    #[arg(long)]
+    pub comment: bool,
+    /// 复制附件 (默认不复制)
+    #[arg(long)]
+    pub include_attachments: bool,
 }
 
 #[derive(Args)]
