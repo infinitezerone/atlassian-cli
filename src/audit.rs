@@ -265,6 +265,7 @@ mod tests {
 
     #[test]
     fn test_replay_lookup_matches_window() {
+        let _g = ENV_LOCK.lock().unwrap();
         let log = tmp_log("rl");
         let body = json!({ "text": "hello" });
         append_in(&log, "POST", "/rest/api/2/issue/PROJ-1/comment", "ok", Some(&body), false);
