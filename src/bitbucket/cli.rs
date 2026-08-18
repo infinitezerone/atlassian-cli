@@ -30,10 +30,10 @@ pub struct CommentPrArgs {
     /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
     pub id_or_url: String,
     /// 评论文本内容 (位置参数)
-    #[arg(value_name = "BODY")]
+    #[arg(value_name = "BODY", allow_hyphen_values = true)]
     pub body_pos: Option<String>,
     /// 评论文本内容 (命名参数，别名 --body, -b, --text, --comment)
-    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    #[arg(long, short = 'b', alias = "text", alias = "comment", allow_hyphen_values = true)]
     pub body: Option<String>,
     /// 行内评论的目标文件相对路径 (如 src/main.rs，不指定则为 PR 全局评论)
     #[arg(long, short = 'f', alias = "path")]
@@ -68,10 +68,10 @@ pub struct CreatePrArgs {
     #[arg(long, short = 'r', alias = "repository")]
     pub repo: String,
     /// PR 标题/概要 (Summary)
-    #[arg(long, short = 't', alias = "summary")]
+    #[arg(long, short = 't', alias = "summary", allow_hyphen_values = true)]
     pub title: String,
     /// PR 详细描述 (Description)
-    #[arg(long, short = 'd', alias = "desc", alias = "body", default_value = "")]
+    #[arg(long, short = 'd', alias = "desc", alias = "body", default_value = "", allow_hyphen_values = true)]
     pub description: String,
     /// 源分支名 (如 feature/add-login)
     #[arg(long, short = 'f', alias = "source", alias = "src", alias = "from-branch")]
