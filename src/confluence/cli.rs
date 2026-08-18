@@ -6,10 +6,10 @@ pub struct CreatePageArgs {
     #[arg(long, short = 's', alias = "space-key")]
     pub space: String,
     /// 页面标题 (Title)
-    #[arg(long, short = 't', alias = "summary", alias = "name")]
+    #[arg(long, short = 't', alias = "summary", alias = "name", allow_hyphen_values = true)]
     pub title: String,
     /// 页面正文内容 (支持纯文本/HTML/Markdown 及时间宏 `<time datetime="..."/>` 与 Jira 动态卡片宏)
-    #[arg(long, short = 'b', alias = "text", alias = "content")]
+    #[arg(long, short = 'b', alias = "text", alias = "content", allow_hyphen_values = true)]
     pub body: String,
     /// 父页面 ID (可选，指定则在此父页面下新建)
     #[arg(long, alias = "parent")]
@@ -21,22 +21,22 @@ pub struct UpdatePageArgs {
     /// 页面 ID 或网页 URL (例如 224527717 或网页链接)
     pub id_or_url: String,
     /// 新的页面标题 (可选，不提供则保留原标题)
-    #[arg(long, short = 't', alias = "summary", alias = "name")]
+    #[arg(long, short = 't', alias = "summary", alias = "name", allow_hyphen_values = true)]
     pub title: Option<String>,
     /// 新的全量页面正文 (可选，全量覆盖)
-    #[arg(long, short = 'b', alias = "text", alias = "content")]
+    #[arg(long, short = 'b', alias = "text", alias = "content", allow_hyphen_values = true)]
     pub body: Option<String>,
     /// 局部原子替换：需寻找的目标旧文本 (需包含唯一上下文段落，与 --replace 配对)
-    #[arg(long)]
+    #[arg(long, allow_hyphen_values = true)]
     pub find: Option<String>,
     /// 局部原子替换：替换后的新文本 (与 --find 配对)
-    #[arg(long)]
+    #[arg(long, allow_hyphen_values = true)]
     pub replace: Option<String>,
     /// 在页面最末尾追加的内容 (不改变原页面任何旧排版与宏)
-    #[arg(long)]
+    #[arg(long, allow_hyphen_values = true)]
     pub append: Option<String>,
     /// 在页面最顶端插入的内容 (不改变原页面任何旧排版与宏)
-    #[arg(long)]
+    #[arg(long, allow_hyphen_values = true)]
     pub prepend: Option<String>,
 }
 

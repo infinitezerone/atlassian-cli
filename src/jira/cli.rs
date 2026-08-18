@@ -21,13 +21,13 @@ pub struct CreateIssueArgs {
     #[arg(long, short = 'p', alias = "proj")]
     pub project: String,
     /// 单子标题/概要 (Summary)
-    #[arg(long, short = 's', alias = "title")]
+    #[arg(long, short = 's', alias = "title", allow_hyphen_values = true)]
     pub summary: String,
     /// 单子类型 (默认 Task，可选 Bug / Story / Task 等)
     #[arg(long, short = 't', alias = "type", default_value = "Task")]
     pub issue_type: String,
     /// 单子详细描述 (Description)
-    #[arg(long, short = 'd', alias = "desc", alias = "body")]
+    #[arg(long, short = 'd', alias = "desc", alias = "body", allow_hyphen_values = true)]
     pub description: Option<String>,
     /// 标签列表 (英文逗号分隔，如 "bug,backend")
     #[arg(long, short = 'l', alias = "label")]
@@ -51,10 +51,10 @@ pub struct UpdateIssueArgs {
     /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
     pub key_or_url: String,
     /// 新的单子标题/概要 (Summary)
-    #[arg(long, short = 's', alias = "title")]
+    #[arg(long, short = 's', alias = "title", allow_hyphen_values = true)]
     pub summary: Option<String>,
     /// 新的单子详细描述 (Description)
-    #[arg(long, short = 'd', alias = "desc", alias = "body")]
+    #[arg(long, short = 'd', alias = "desc", alias = "body", allow_hyphen_values = true)]
     pub description: Option<String>,
     /// 指派人用户名 (Assignee username)
     #[arg(long, short = 'a', alias = "user")]
@@ -78,10 +78,10 @@ pub struct CommentArgs {
     /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
     pub key: String,
     /// 评论正文 (位置参数，与 --body / --text 互为等价输入)
-    #[arg(value_name = "BODY")]
+    #[arg(value_name = "BODY", allow_hyphen_values = true)]
     pub body_pos: Option<String>,
     /// 评论正文 (命名参数，别名 --text, --comment, -b)
-    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    #[arg(long, short = 'b', alias = "text", alias = "comment", allow_hyphen_values = true)]
     pub body: Option<String>,
 }
 
@@ -102,10 +102,10 @@ pub struct CommentUpdateArgs {
     /// 评论 ID (jira get 返回的 comments[].id)
     pub comment_id: String,
     /// 新的评论正文 (位置参数，与 --body / --text 互为等价输入)
-    #[arg(value_name = "BODY")]
+    #[arg(value_name = "BODY", allow_hyphen_values = true)]
     pub body_pos: Option<String>,
     /// 新的评论正文 (命名参数，别名 --text, --comment, -b)
-    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    #[arg(long, short = 'b', alias = "text", alias = "comment", allow_hyphen_values = true)]
     pub body: Option<String>,
 }
 
@@ -377,7 +377,7 @@ pub struct AddWorklogArgs {
     #[arg(long, short = 't', alias = "time", alias = "spent")]
     pub time_spent: Option<String>,
     /// 工时日志备注说明 (可选，别名 --comment, -c, -m, --body, --text, --desc)
-    #[arg(long, short = 'm', short_alias = 'c', alias = "comment", alias = "body", alias = "text", alias = "desc")]
+    #[arg(long, short = 'm', short_alias = 'c', alias = "comment", alias = "body", alias = "text", alias = "desc", allow_hyphen_values = true)]
     pub comment: Option<String>,
     /// 开始时间 (可选，格式 "YYYY-MM-DD" 或 "YYYY-MM-DDTHH:MM:SS"，不传默认为当前时间)
     #[arg(long, short = 's', alias = "date", alias = "start")]
