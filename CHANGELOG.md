@@ -9,6 +9,15 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-18
+
+WorkBuddy & CodeBuddy ecosystem integration and non-intrusive skill deployment.
+
+### Added
+
+- **WorkBuddy & CodeBuddy Ecosystem Support**: `atlassian-cli skill install` now natively supports `.workbuddy/skills/atlassian-cli` and `.codebuddy/skills/atlassian-cli`.
+- **Non-Intrusive Skill Deployment**: `skill install` now performs pre-flight base environment detection, only installing to AI tools that actually exist on the user's system, preventing home directory pollution.
+
 ## [0.4.0] - 2026-08-18
 
 AI invocation ergonomics & full Jira lifecycle milestone: dual-mode arguments, 100% invocation accuracy, progressive disclosure Skill, and complete issue lifecycle operations.
