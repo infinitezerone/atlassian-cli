@@ -19,7 +19,7 @@ const CONFIG_FILE_NAME: &str = "config.json";
 
 pub const MODULES: [&str; 3] = ["jira", "confluence", "bitbucket"];
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub jira_url: String,
@@ -29,20 +29,6 @@ pub struct Config {
     pub bitbucket_url: String,
     pub bitbucket_token: String,
     pub allow_insecure_certs: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            jira_url: String::new(),
-            jira_token: String::new(),
-            confluence_url: String::new(),
-            confluence_token: String::new(),
-            bitbucket_url: String::new(),
-            bitbucket_token: String::new(),
-            allow_insecure_certs: false,
-        }
-    }
 }
 
 pub fn config_dir() -> PathBuf {

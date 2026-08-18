@@ -1,17 +1,17 @@
+//! 本地写操作审计日志:记录"谁在何时改了什么"(本机留痕,可追溯 AI 行为)。
+//!
+//! 文件 `~/.atlassian-cli/audit.jsonl`,与 config.json 同目录。
+//! token 永不在其中(PAT 走 HTTP header,不经过 body)。正文摘要截断
+//! 200 字符;幂等回放的请求标记 `replayed: true`。
+//!
+//! 磁盘保护:超过阈值(默认 5MB,`ATLASSIAN_CLI_AUDIT_MAX_BYTES` 可调)
+//! 自动滚动到 `audit.1.jsonl`(覆盖旧备份),磁盘占用上限约 2×阈值,
+//! 避免像无界日志那样长期运行挤爆磁盘。
+
 use serde_json::{json, Value};
 
 use crate::config;
 use crate::error::AppError;
-
-/// 本地写操作审计日志:记录"谁在何时改了什么"(本机留痕,可追溯 AI 行为)。
-///
-/// 文件 `~/.atlassian-cli/audit.jsonl`,与 config.json 同目录。
-/// token 永不在其中(PAT 走 HTTP header,不经过 body)。正文摘要截断
-/// 200 字符;幂等回放的请求标记 `replayed: true`。
-///
-/// 磁盘保护:超过阈值(默认 5MB,`ATLASSIAN_CLI_AUDIT_MAX_BYTES` 可调)
-/// 自动滚动到 `audit.1.jsonl`(覆盖旧备份),磁盘占用上限约 2×阈值,
-/// 避免像无界日志那样长期运行挤爆磁盘。
 
 const BODY_PREVIEW_MAX: usize = 200;
 const DEFAULT_MAX_BYTES: u64 = 5 * 1024 * 1024;
@@ -81,11 +81,18 @@ fn append_in(
     if let Some(parent) = log.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(log)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        .open(log);
+    if let Ok(mut f) = file {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        let _ = std::io::Write::write_all(&mut f, line.as_bytes());
+    }
 }
 
 /// 幂等查询:在主审计日志(+滚动备份)中倒序查找窗口期内相同写请求。

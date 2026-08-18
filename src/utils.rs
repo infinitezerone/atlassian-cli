@@ -319,9 +319,9 @@ pub fn parse_bitbucket_repo(
 /// - `@john.doe` → `john.doe`
 pub fn parse_username(input: &str) -> String {
     let mut trimmed = input.trim();
-    if trimmed.starts_with("[~") && trimmed.ends_with(']') {
-        trimmed = &trimmed[2..trimmed.len() - 1];
-    } else if trimmed.starts_with("@{") && trimmed.ends_with('}') {
+    if (trimmed.starts_with("[~") && trimmed.ends_with(']'))
+        || (trimmed.starts_with("@{") && trimmed.ends_with('}'))
+    {
         trimmed = &trimmed[2..trimmed.len() - 1];
     } else if trimmed.starts_with('@') {
         trimmed = &trimmed[1..];

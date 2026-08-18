@@ -77,59 +77,100 @@ impl ErrorCode {
     }
 }
 
+/// 结构化错误内部数据(Box 化以将 AppError 栈大小控制在 16 字节内)
+#[derive(Debug)]
+struct AppErrorInner {
+    /// 面向人类的主消息
+    message: String,
+    /// 服务器原始详情(已清洗,可选)
+    detail: Option<String>,
+    /// 模块名(由 run() 附加,如 "jira")
+    module: Option<String>,
+    /// 覆盖默认 suggestion(可选,用于给具体场景更精准的下一步建议)
+    suggestion: Option<String>,
+    /// 直接可重试执行的完整命令(供 AI Agent 零推理开销执行)
+    suggested_command: Option<String>,
+    source: Option<anyhow::Error>,
+}
+
+impl Clone for AppErrorInner {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+            detail: self.detail.clone(),
+            module: self.module.clone(),
+            suggestion: self.suggestion.clone(),
+            suggested_command: self.suggested_command.clone(),
+            source: None,
+        }
+    }
+}
+
 /// 结构化错误(公共边界统一返回)
 #[derive(Debug)]
 pub struct AppError {
     pub code: ErrorCode,
-    /// 面向人类的主消息
-    pub message: String,
-    /// 服务器原始详情(已清洗,可选)
-    pub detail: Option<String>,
-    /// 模块名(由 run() 附加,如 "jira")
-    pub module: Option<String>,
-    /// 覆盖默认 suggestion(可选,用于给具体场景更精准的下一步建议)
-    suggestion: Option<String>,
-    /// 直接可重试执行的完整命令(供 AI Agent 零推理开销执行)
-    pub suggested_command: Option<String>,
-    pub source: Option<anyhow::Error>,
+    inner: Box<AppErrorInner>,
 }
 
 impl AppError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             code,
-            message: message.into(),
-            detail: None,
-            module: None,
-            suggestion: None,
-            suggested_command: None,
-            source: None,
+            inner: Box::new(AppErrorInner {
+                message: message.into(),
+                detail: None,
+                module: None,
+                suggestion: None,
+                suggested_command: None,
+                source: None,
+            }),
         }
     }
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
-        self.detail = Some(detail.into());
+        self.inner.detail = Some(detail.into());
         self
     }
 
     /// 覆盖默认 suggestion(agent 可执行的下一步)
     pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
-        self.suggestion = Some(suggestion.into());
+        self.inner.suggestion = Some(suggestion.into());
         self
     }
 
     /// 提供精准拼接好的完整重试命令行
     pub fn with_suggested_command(mut self, command: impl Into<String>) -> Self {
-        self.suggested_command = Some(command.into());
+        self.inner.suggested_command = Some(command.into());
         self
     }
 
     /// 附加模块前缀(仅首次附加)
     pub fn with_module(mut self, module: &str) -> Self {
-        if self.module.is_none() {
-            self.module = Some(module.to_string());
+        if self.inner.module.is_none() {
+            self.inner.module = Some(module.to_string());
         }
         self
+    }
+
+    #[allow(dead_code)]
+    pub fn message(&self) -> &str {
+        &self.inner.message
+    }
+
+    #[allow(dead_code)]
+    pub fn detail(&self) -> Option<&str> {
+        self.inner.detail.as_deref()
+    }
+
+    #[allow(dead_code)]
+    pub fn module(&self) -> Option<&str> {
+        self.inner.module.as_deref()
+    }
+
+    #[allow(dead_code)]
+    pub fn suggested_command(&self) -> Option<&str> {
+        self.inner.suggested_command.as_deref()
     }
 
     // ---- 语义化构造器 ----
@@ -160,16 +201,16 @@ impl AppError {
         let mut v = serde_json::json!({
             "status": "error",
             "code": self.code.as_str(),
-            "message": self.message,
-            "suggestion": self.suggestion.clone().unwrap_or_else(|| self.code.suggestion().to_string()),
+            "message": self.inner.message,
+            "suggestion": self.inner.suggestion.clone().unwrap_or_else(|| self.code.suggestion().to_string()),
         });
-        if let Some(cmd) = &self.suggested_command {
+        if let Some(cmd) = &self.inner.suggested_command {
             v["suggested_command"] = serde_json::json!(cmd);
         }
-        if let Some(d) = &self.detail {
+        if let Some(d) = &self.inner.detail {
             v["detail"] = serde_json::json!(d);
         }
-        if let Some(m) = &self.module {
+        if let Some(m) = &self.inner.module {
             v["module"] = serde_json::json!(m);
         }
         v
@@ -178,16 +219,17 @@ impl AppError {
 
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.module {
-            Some(m) => write!(f, "[{}] {}", m, self.message),
-            None => write!(f, "{}", self.message),
+        match &self.inner.module {
+            Some(m) => write!(f, "[{}] {}", m, self.inner.message),
+            None => write!(f, "{}", self.inner.message),
         }
     }
 }
 
 impl std::error::Error for AppError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
+        self.inner
+            .source
             .as_ref()
             .map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
     }
@@ -199,12 +241,7 @@ impl From<anyhow::Error> for AppError {
         if let Some(ae) = e.downcast_ref::<AppError>() {
             return Self {
                 code: ae.code,
-                message: ae.message.clone(),
-                detail: ae.detail.clone(),
-                module: ae.module.clone(),
-                suggestion: ae.suggestion.clone(),
-                suggested_command: ae.suggested_command.clone(),
-                source: None,
+                inner: ae.inner.clone(),
             };
         }
         Self::generic(e.to_string())
@@ -297,7 +334,7 @@ mod tests {
     #[test]
     fn test_with_module_only_once() {
         let e = AppError::not_found("x").with_module("jira").with_module("bitbucket");
-        assert_eq!(e.module.as_deref(), Some("jira"));
+        assert_eq!(e.module(), Some("jira"));
     }
 
     #[test]
@@ -306,7 +343,7 @@ mod tests {
         let anyhow_err: anyhow::Error = anyhow::Error::new(original);
         let back: AppError = anyhow_err.into();
         assert_eq!(back.code, ErrorCode::PermissionDenied);
-        assert_eq!(back.message, "权限拒绝");
+        assert_eq!(back.message(), "权限拒绝");
     }
 
     #[test]

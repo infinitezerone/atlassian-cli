@@ -1460,7 +1460,12 @@ impl Jira {
 
         let save_to = match output_path {
             Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p.trim()),
-            _ => std::path::PathBuf::from(filename),
+            _ => {
+                let safe_name = std::path::Path::new(filename)
+                    .file_name()
+                    .unwrap_or_else(|| std::ffi::OsStr::new("attachment"));
+                std::path::PathBuf::from(safe_name)
+            }
         };
 
         if let Some(parent) = save_to.parent() {
@@ -1652,5 +1657,142 @@ mod tests {
         let queried_by_id = filter_fields_json(&raw, Some("10020"), false, 10);
         assert_eq!(queried_by_id.len(), 1);
         assert_eq!(queried_by_id[0]["name"], "Sprint");
+    }
+
+    #[tokio::test]
+    async fn test_mock_jira_get_issue_slim() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let jira_raw_issue = json!({
+            "key": "PROJ-101",
+            "fields": {
+                "summary": "Fix login crash on startup",
+                "description": "App crashes when token is empty",
+                "status": { "name": "In Progress" },
+                "issuetype": { "name": "Bug" },
+                "priority": { "name": "High" },
+                "labels": ["ios", "crash"],
+                "timetracking": {},
+                "assignee": {
+                    "name": "zhangsan",
+                    "displayName": "Zhang San"
+                },
+                "reporter": {
+                    "name": "lisi",
+                    "displayName": "Li Si"
+                },
+                "comment": {
+                    "comments": [
+                        {
+                            "id": "1001",
+                            "author": { "name": "zhangsan", "displayName": "Zhang San" },
+                            "created": "2026-08-18T10:00:00.000+0000",
+                            "body": "Investigating the trace..."
+                        }
+                    ]
+                }
+            }
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/rest/api/2/issue/PROJ-101"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jira_raw_issue))
+            .mount(&mock_server)
+            .await;
+
+        let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+        let jira = Jira::new(http, WritePolicy { dry_run: false, confirm: true });
+
+        let args = GetIssueArgs {
+            key: "PROJ-101".to_string(),
+            raw: false,
+            fields: None,
+            comments_limit: 5,
+        };
+
+        let res = jira.get_issue(&args).await.unwrap();
+        assert_eq!(res["key"], "PROJ-101");
+        assert_eq!(res["summary"], "Fix login crash on startup");
+        assert_eq!(res["status"], "In Progress");
+        assert_eq!(res["assignee"]["mention_syntax"], "[~zhangsan]");
+        assert_eq!(res["comments_count"], 1);
+        assert_eq!(res["comments"][0]["author"]["mention_syntax"], "[~zhangsan]");
+    }
+
+    #[tokio::test]
+    async fn test_mock_jira_add_comment() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let key = format!("PROJ-{}", nanos % 1000000);
+        let path_str = format!("/rest/api/2/issue/{}/comment", key);
+
+        Mock::given(method("POST"))
+            .and(path(path_str))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "id": "9999",
+                "body": "Fixed in PR #42",
+                "author": { "displayName": "Zhang San" },
+                "created": "2026-08-18T12:00:00.000+0000"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+        let jira = Jira::new(http, WritePolicy { dry_run: false, confirm: true });
+
+        let res = jira.add_comment(&key, "Fixed in PR #42").await.unwrap();
+        assert_eq!(res["status"], "success");
+        assert_eq!(res["comment_id"], "9999");
+        assert_eq!(res["issue"], key);
+    }
+
+    #[tokio::test]
+    async fn test_mock_jira_transition() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let key = format!("PROJ-{}", (nanos + 1) % 1000000);
+        let trans_path = format!("/rest/api/2/issue/{}/transitions", key);
+
+        // 1. 查询可用 transitions
+        Mock::given(method("GET"))
+            .and(path(trans_path.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "transitions": [
+                    { "id": "11", "name": "Start Progress", "to": { "name": "In Progress" } },
+                    { "id": "21", "name": "Done", "to": { "name": "Closed" } }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // 2. 执行 transition
+        Mock::given(method("POST"))
+            .and(path(trans_path))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+
+        let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+        let jira = Jira::new(http, WritePolicy { dry_run: false, confirm: true });
+
+        let res = jira.transition(&key, "Start Progress").await.unwrap();
+        assert_eq!(res["status"], "success");
+        assert_eq!(res["issue"], key);
+        assert_eq!(res["new_status"], "Start Progress");
     }
 }

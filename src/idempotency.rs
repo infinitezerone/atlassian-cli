@@ -1,17 +1,17 @@
-use serde_json::{json, Value};
+//! 幂等写操作:窗口期内,相同的写请求 (method + path + body) 只真正执行一次。
+//!
+//! AI 重试/超时重放是常见场景——第一次已成功但结果丢失,重试会重复提交
+//! (重复评论/重复工时)。在 HttpClient 的 post/put/delete 出口统一拦截:
+//! 命中时返回 `idempotent_replay`(exit 0,视为成功,无副作用)。
+//!
+//! 记录复用审计日志(每条审计记录携带 hash 指纹,见 audit.rs),**不写
+//! 独立的幂等文件**——每个写操作只有一次磁盘追加,减少 IO 次数。
+//!
+//! 配置:
+//! - `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` 窗口秒数(默认 300,0 = 关闭)
+//! - `ATLASSIAN_CLI_FORCE_WRITE=1` 强制绕过(存量脚本/CI 迁移期用)
 
-/// 幂等写操作:窗口期内,相同的写请求 (method + path + body) 只真正执行一次。
-///
-/// AI 重试/超时重放是常见场景——第一次已成功但结果丢失,重试会重复提交
-/// (重复评论/重复工时)。在 HttpClient 的 post/put/delete 出口统一拦截:
-/// 命中时返回 `idempotent_replay`(exit 0,视为成功,无副作用)。
-///
-/// 记录复用审计日志(每条审计记录携带 hash 指纹,见 audit.rs),**不写
-/// 独立的幂等文件**——每个写操作只有一次磁盘追加,减少 IO 次数。
-///
-/// 配置:
-/// - `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` 窗口秒数(默认 300,0 = 关闭)
-/// - `ATLASSIAN_CLI_FORCE_WRITE=1` 强制绕过(存量脚本/CI 迁移期用)
+use serde_json::{json, Value};
 
 const DEFAULT_WINDOW_SECS: u64 = 300;
 

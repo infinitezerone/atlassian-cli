@@ -99,40 +99,40 @@ impl HttpClient {
         Self::parse(res).await
     }
 
-    /// 发起 POST 请求 (写操作:经幂等窗口去重,成功后记录)
+    /// 发起 POST 请求 (写操作:经幂等窗口去重,成功后记录;使用 raw_client 防止网络层隐式二次写)
     pub async fn post(&self, path: &str, body: Value) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("POST", path, Some(&body)) {
             crate::audit::append("POST", path, "replayed", Some(&body), true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
-        let res = self.client.post(&url).json(&body).send().await?;
+        let res = self.raw_client.post(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
         crate::audit::append("POST", path, "ok", Some(&body), false);
         Ok(out)
     }
 
-    /// 发起 PUT 请求 (写操作:经幂等窗口去重,成功后记录)
+    /// 发起 PUT 请求 (写操作:经幂等窗口去重,成功后记录;使用 raw_client 防止网络层隐式二次写)
     pub async fn put(&self, path: &str, body: Value) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("PUT", path, Some(&body)) {
             crate::audit::append("PUT", path, "replayed", Some(&body), true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
-        let res = self.client.put(&url).json(&body).send().await?;
+        let res = self.raw_client.put(&url).json(&body).send().await?;
         let out = Self::parse(res).await?;
         crate::audit::append("PUT", path, "ok", Some(&body), false);
         Ok(out)
     }
 
-    /// 发起 DELETE 请求 (写操作:经幂等窗口去重,成功后记录)
+    /// 发起 DELETE 请求 (写操作:经幂等窗口去重,成功后记录;使用 raw_client 防止网络层隐式二次写)
     pub async fn delete(&self, path: &str) -> Result<Value, AppError> {
         if let Some(matched) = crate::idempotency::check("DELETE", path, None) {
             crate::audit::append("DELETE", path, "replayed", None, true);
             return Ok(crate::idempotency::replay_response(&matched));
         }
         let url = self.url(path);
-        let res = self.client.delete(&url).send().await?;
+        let res = self.raw_client.delete(&url).send().await?;
         let out = Self::parse(res).await?;
         crate::audit::append("DELETE", path, "ok", None, false);
         Ok(out)
@@ -182,7 +182,7 @@ impl HttpClient {
                         .or_else(|| v.get("errors"))
                         .or_else(|| v.get("errorMessages").and_then(|m| m.as_array().and_then(|a| a.first())))
                         .and_then(|m| m.as_str())
-                        .map(|s| crate::security::sanitize_external_text(s))
+                        .map(crate::security::sanitize_external_text)
                 })
                 .unwrap_or_else(|| {
                     crate::security::sanitize_external_text(&text.chars().take(300).collect::<String>())
@@ -208,11 +208,11 @@ impl HttpClient {
 /// 纯函数:HTTP 状态码 -> 结构化错误(供 parse/get_text 共用,便于单测)
 pub(crate) fn classify_http_error(status: reqwest::StatusCode) -> AppError {
     match status.as_u16() {
-        401 => AppError::auth_expired(format!("HTTP [401] 认证失败: PAT Token 无效或已过期")),
-        403 => AppError::permission_denied(format!("HTTP [403] 权限拒绝: 当前 Token 无权访问该资源")),
-        404 => AppError::not_found(format!(
-            "HTTP [404] 资源未找到: 请检查 API 路径或 Base URL 是否包含正确前缀 (如 /jira 或 /confluence)"
-        )),
+        401 => AppError::auth_expired("HTTP [401] 认证失败: PAT Token 无效或已过期".to_string()),
+        403 => AppError::permission_denied("HTTP [403] 权限拒绝: 当前 Token 无权访问该资源".to_string()),
+        404 => AppError::not_found(
+            "HTTP [404] 资源未找到: 请检查 API 路径或 Base URL 是否包含正确前缀 (如 /jira 或 /confluence)".to_string(),
+        ),
         code => AppError::http_error(format!("HTTP [{}] 请求失败", code)),
     }
 }
@@ -228,7 +228,7 @@ mod tests {
         let e = classify_http_error(StatusCode::UNAUTHORIZED);
         assert_eq!(e.code, ErrorCode::AuthExpired);
         assert_eq!(e.code.exit_code(), 10);
-        assert!(e.message.contains("401"));
+        assert!(e.message().contains("401"));
 
         let e = classify_http_error(StatusCode::FORBIDDEN);
         assert_eq!(e.code, ErrorCode::PermissionDenied);
@@ -244,5 +244,66 @@ mod tests {
 
         let e = classify_http_error(StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(e.code, ErrorCode::HttpError);
+    }
+
+    #[tokio::test]
+    async fn test_mock_get_retry_on_503() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // 前 2 次返回 503, 第 3 次返回 200 成功
+        Mock::given(method("GET"))
+            .and(path("/api/flaky"))
+            .respond_with(ResponseTemplate::new(503))
+            .up_to_n_times(2)
+            .expect(2)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/flaky"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "result": "recovered" })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = HttpClient::new(mock_server.uri(), "test-token", false).unwrap();
+        let res = client.get("/api/flaky").await.unwrap();
+        assert_eq!(res["result"], "recovered");
+    }
+
+    #[tokio::test]
+    async fn test_mock_post_idempotency_skip() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_path = format!("/api/write-{}", nanos);
+
+        // MockServer 仅期望接收到 1 次 POST 请求
+        Mock::given(method("POST"))
+            .and(path(test_path.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": "created-1" })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = HttpClient::new(mock_server.uri(), "test-token", false).unwrap();
+        let body = serde_json::json!({ "summary": "test idempotency item" });
+
+        // 第 1 次执行: 真正调用 MockServer
+        let res1 = client.post(&test_path, body.clone()).await.unwrap();
+        assert_eq!(res1["id"], "created-1");
+
+        // 第 2 次执行: 相同参数被幂等窗口拦截, 不再向 MockServer 发送请求
+        let res2 = client.post(&test_path, body).await.unwrap();
+        assert_eq!(res2["status"], "idempotent_replay");
+        assert_eq!(res2["action"], "skipped");
     }
 }

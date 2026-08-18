@@ -110,7 +110,7 @@ async fn probe_single_url(
             client.get("/rest/api/1.0/projects?limit=1").await?;
             Ok("已连通".to_string())
         }
-        _ => return Err(AppError::param_invalid(format!("未知模块: {}", module))),
+        _ => Err(AppError::param_invalid(format!("未知模块: {}", module))),
     }
 }
 

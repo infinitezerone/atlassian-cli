@@ -120,11 +120,17 @@ fn mask_injection_patterns(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut pos = 0;
     for (s, e) in merged {
-        out.push_str(&input[pos..s]);
-        out.push_str(REDACTED_MARKER);
-        pos = e;
+        if input.is_char_boundary(pos) && input.is_char_boundary(s) && input.is_char_boundary(e) && s >= pos && s <= e {
+            out.push_str(&input[pos..s]);
+            out.push_str(REDACTED_MARKER);
+            pos = e;
+        }
     }
-    out.push_str(&input[pos..]);
+    if input.is_char_boundary(pos) {
+        out.push_str(&input[pos..]);
+    } else {
+        out.push_str(input);
+    }
     out
 }
 

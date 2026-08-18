@@ -164,8 +164,8 @@ mod tests {
         let e = require_confirmed(&denied).unwrap_err();
         assert_eq!(e.code, ErrorCode::ParamInvalid);
         assert_eq!(e.code.exit_code(), 2);
-        assert!(e.detail.as_deref().unwrap().contains("--confirm"));
-        assert!(e.suggested_command.as_deref().unwrap().contains("--confirm"));
+        assert!(e.detail().unwrap().contains("--confirm"));
+        assert!(e.suggested_command().unwrap().contains("--confirm"));
     }
 
     #[test]

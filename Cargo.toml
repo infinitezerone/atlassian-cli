@@ -17,6 +17,9 @@ anyhow = "1.0"
 dirs-next = "2.0"
 rpassword = "7.3"
 
+[dev-dependencies]
+wiremock = "0.6"
+
 [profile.release]
 strip = true
 lto = true
