@@ -33,8 +33,8 @@ cd atlassian-cli && cargo build --release
 **Upgrading**: re-run the install script or `brew upgrade atlassian-cli`. Run `atlassian-cli check-update` anytime to compare your local version against the latest GitHub release:
 
 ```bash
-atlassian-cli check-update              # {"status":"ok","current_version":"0.3.0","latest_version":"0.3.0","up_to_date":true,...}
-atlassian-cli check-update --compact    # single-line, for scripts/pipelines
+atlassian-cli check-update             # {"status":"ok","current_version":"0.3.0","latest_version":"0.3.0","up_to_date":true}
+atlassian-cli check-update --pretty    # indented formatting for human reading
 ```
 
 ## 🔄 Changelog
@@ -107,7 +107,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `config test` / `config status` | Verify connectivity & Token permissions |
 | **Introspect** | `schema [path...]` | Machine-readable command tree JSON for AI agents (e.g. `schema jira comment`) |
 | **Audit** | `audit [--limit N]` | Local write-audit trail: what was changed, when, by which request (incl. `replayed` markers) |
-| **Update** | `check-update` | Compare local version against latest GitHub release (`--compact` for pipelines) |
+| **Update** | `check-update` | Compare local version against latest GitHub release |
 
 **Global Flags** (usable anywhere):
 
@@ -116,7 +116,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | `--dry-run` | Preview write operations as JSON (`status: dry_run`) without calling the API — zero side effects |
 | `--confirm` | Explicitly confirm write operations; **without it the CLI refuses to execute** (exit 2) |
 | `-k` / `--insecure` | Skip TLS certificate validation (MITM risk — only with user approval) |
-| `--compact` | Single-line compact JSON output (saves tokens; default is pretty-printed for humans) |
+| `--pretty` | Indented pretty-printed JSON output (default is single-line compact JSON to save tokens) |
 
 **AI Retry Safety**: identical write requests (method + path + body) are deduplicated within a 300s window. Replays return `status: idempotent_replay` (exit 0) instead of re-sending — set `ATLASSIAN_CLI_IDEMPOTENCY_WINDOW` to adjust (0 = off), `ATLASSIAN_CLI_FORCE_WRITE=1` to bypass. Input guards: JQL syntax, `time_spent` units (w/d/h/m), `--started` ranges, and `[~mention]` syntax are all validated before any request. **Disk-friendly by design**: the dedupe fingerprint lives inside each `audit.jsonl` entry (no separate idempotency file → exactly one append per write op); `audit.jsonl` rotates past 5MB keeping one backup (`ATLASSIAN_CLI_AUDIT_MAX_BYTES` to tune). No unbounded growth, no write amplification.
 
