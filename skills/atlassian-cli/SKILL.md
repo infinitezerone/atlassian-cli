@@ -3,51 +3,37 @@ name: atlassian-cli
 description: Operate self-hosted Atlassian (Jira / Confluence / Bitbucket Server & Data Center) via the atlassian-cli JSON CLI. Trigger whenever the user mentions Jira issue keys or links (PROJ-123), needs to read/search/comment/transition issues, log worklog, clone or bulk-create issues, look up users or JQL field suggestions, search or edit Confluence pages, or review Bitbucket PRs (diff, comments, approve).
 ---
 
-# Atlassian CLI (`atlassian-cli`) Skill Guide
+# Atlassian CLI (`atlassian-cli`) Quick Reference
 
-Use `atlassian-cli` to interact with self-hosted (Data Center / Server) Jira, Confluence, and Bitbucket instances. All output is JSON — machine-parseable, no guessing.
+Self-hosted (Server / Data Center) Jira, Confluence, and Bitbucket CLI. All outputs are single-line compact JSON by default (use `--pretty` only for formatted human viewing).
 
-**Token-optimal by default**: All commands emit single-line compact JSON by default (zero whitespace token waste). Append `--pretty` if indented formatting is needed for human presentation.
+## 1. Golden Principles
 
-## 1. Golden Rules for AI Agents
+1. **Introspect Schema First**: Never guess flags or types. Run `atlassian-cli schema <command>` (e.g. `atlassian-cli schema jira comment`) to inspect exact parameter signatures.
+2. **Resolve Entities Before Writing**:
+   - People / Mentions: `jira user "Name"` ➔ `[~username]`
+   - Issue Types: `jira issue-types --project PROJ`
+   - Transitions: `jira transitions PROJ-123`
+   - Custom Fields: `jira fields -q "Sprint"`
+   - PR Diffs: `bitbucket diff-pr 100 --stat` (check file list before full diff)
+3. **Write Safety**: All write operations require `--confirm` (exit 2 otherwise). Use `--dry-run` to preview mutation payloads safely.
 
-1. **Schema Self-Introspection (When Uncertain, Introspect First)**:
-   Never guess parameters or argument formats. Run `schema` to discover the exact argument tree, types, and flags:
-   ```bash
-   atlassian-cli schema jira comment            # inspect specific command schema & flags
-   atlassian-cli schema bitbucket comment-pr    # inspect args & write: true markers
-   ```
-2. **Entity Pre-Introspection (Read Before Write)**:
-   Never guess entity names/IDs — always resolve real values first:
-   - **Users & Mentions**: `atlassian-cli jira user "Name"` ➔ returns `mention_syntax` (`[~username]`)
-   - **Issue Types**: `atlassian-cli jira issue-types --project PROJ` ➔ avoid guessing Bug vs Task
-   - **Workflow Statuses**: `atlassian-cli jira transitions PROJ-123` ➔ avoid invalid transition names
-   - **Custom Fields**: `atlassian-cli jira fields -q "Sprint"` ➔ find real `customfield_xxxxx` IDs
-   - **JQL Candidates**: `atlassian-cli jira suggest-values --field assignee --query "..."`
-   - **PR Diff Overview**: `atlassian-cli bitbucket diff-pr 100 --stat` ➔ check changed files before full diff
-3. **Write-Operation Safety**:
-   All write operations require `--confirm`; without it the CLI rejects execution (exit 2, `PARAM_INVALID`). Use `--dry-run` to preview the mutation payload with zero side effects:
-   ```bash
-   atlassian-cli --dry-run jira comment PROJ-123 --body "Analysis completed."   # preview
-   atlassian-cli --confirm jira comment PROJ-123 --body "Analysis completed."   # execute
-   ```
+## 2. Command Cheat-Sheet
 
-## 2. Core Command Cheat-Sheet
-
-**Jira (read):**
+**Jira (Read):**
 ```bash
-atlassian-cli jira get PROJ-123                       # issue + comments (accepts full browse URL)
+atlassian-cli jira get PROJ-123                       # issue + comments (accepts browse URL)
 atlassian-cli jira search "project = PROJ AND status != Closed" --limit 10
 atlassian-cli jira projects                           # list projects (--query filter)
 atlassian-cli jira issue-types --project PROJ         # available issue types
-atlassian-cli jira user "John"                      # resolve mention_syntax [~username]
-atlassian-cli jira suggest-values --field assignee --query "John"   # JQL candidates
-atlassian-cli jira transitions PROJ-123               # available status moves
-atlassian-cli jira worklog-list PROJ-123
-atlassian-cli jira watchers PROJ-123                  # who's watching
+atlassian-cli jira user "John"                      # resolve [~username] for mentions
+atlassian-cli jira suggest-values --field assignee --query "John"   # JQL candidate values
+atlassian-cli jira transitions PROJ-123               # valid next status transitions
+atlassian-cli jira worklog-list PROJ-123              # history worklogs
+atlassian-cli jira watchers PROJ-123                  # watching users
 ```
 
-**Jira (write — always --confirm):**
+**Jira (Write — always `--confirm`):**
 ```bash
 atlassian-cli jira comment PROJ-123 --body "text" --confirm
 atlassian-cli jira comment-update PROJ-123 <comment_id> --body "new text" --confirm
@@ -65,7 +51,7 @@ atlassian-cli jira clone PROJ-123 --link --confirm
 **Confluence:**
 ```bash
 atlassian-cli confluence search "Architecture" --limit 5
-atlassian-cli confluence get 12345678                 # page text (--title-only to skip body)
+atlassian-cli confluence get 12345678                 # plain text (--title-only to skip body)
 atlassian-cli confluence create --space PROJ --title "..." --body "..." --confirm
 atlassian-cli confluence update 12345678 --find "old" --replace "new" --confirm
 ```
@@ -73,20 +59,19 @@ atlassian-cli confluence update 12345678 --find "old" --replace "new" --confirm
 **Bitbucket:**
 ```bash
 atlassian-cli bitbucket list-prs --project PROJ --repo my-repo --state OPEN
-atlassian-cli bitbucket get-pr 100
-atlassian-cli bitbucket diff-pr 100 --stat            # changed files only (token saver)
+atlassian-cli bitbucket get-pr 100                    # PR overview
+atlassian-cli bitbucket diff-pr 100 --stat            # changed files summary (token saver!)
+atlassian-cli bitbucket diff-pr 100 --file "App.java" # targeted single file diff
 atlassian-cli bitbucket comment-pr 100 --body "LGTM" --confirm
 atlassian-cli bitbucket approve-pr 100 --confirm
 ```
 
-## 3. Reference Documents (load on demand)
+## 3. On-Demand Deep References
 
-Detailed command examples live in separate reference files — load only what the task needs:
-
-| When you need... | Load |
+| Scope | Reference Path |
 | :--- | :--- |
-| Full Jira commands (JQL details, mentions, attachments, fields, worklog, bulk/clone flags) | `references/jira-commands.md` |
-| Full Confluence commands (CQL, page body fetch, macro create/update) | `references/confluence-commands.md` |
-| Full Bitbucket commands (PR diff filters, inline comments) | `references/bitbucket-commands.md` |
-| Handle an error / react to exit codes programmatically | `references/error-codes.md` |
-| Runtime schema discovery, idempotent-write semantics, audit trail | `references/advanced.md` |
+| JQL, mentions, attachments, custom fields, bulk/clone | `references/jira-commands.md` |
+| CQL, page fetching, HTML macros, atomic editing | `references/confluence-commands.md` |
+| PR diff line budgets, inline file review comments | `references/bitbucket-commands.md` |
+| Exit codes & structured error recovery | `references/error-codes.md` |
+| Schema tree, idempotency deduplication & audit trail | `references/advanced.md` |
