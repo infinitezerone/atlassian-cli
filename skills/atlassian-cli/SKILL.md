@@ -26,8 +26,8 @@ atlassian-cli jira get PROJ-123                       # issue + comments (accept
 atlassian-cli jira search "project = PROJ AND status != Closed" --limit 10
 atlassian-cli jira projects                           # list projects (--query filter)
 atlassian-cli jira issue-types --project PROJ         # available issue types
-atlassian-cli jira user "John"                      # resolve [~username] for mentions
-atlassian-cli jira suggest-values --field assignee --query "John"   # JQL candidate values
+atlassian-cli jira user "John"                        # resolve [~username] for mentions
+atlassian-cli jira suggest-values --field assignee --query "John"     # JQL candidate values
 atlassian-cli jira transitions PROJ-123               # valid next status transitions
 atlassian-cli jira worklog-list PROJ-123              # history worklogs
 atlassian-cli jira watchers PROJ-123                  # watching users

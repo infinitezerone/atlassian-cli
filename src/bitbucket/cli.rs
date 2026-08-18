@@ -142,7 +142,7 @@ pub enum BitbucketActions {
     ApprovePr(GetPrArgs),
     /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
     User {
-        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
+        /// 姓名或邮箱关键字 (如 "john" 或 "john.doe@example.com")
         query: String,
         /// 最多返回条数 (默认 10)
         #[arg(long, default_value_t = 10)]

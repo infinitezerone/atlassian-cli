@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 
 #[derive(Args)]
 pub struct GetIssueArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key: String,
     /// 最多包含的最新评论条数 (默认 10，设为 0 可不返回评论)
     #[arg(long, default_value_t = 10)]
@@ -17,7 +17,7 @@ pub struct GetIssueArgs {
 
 #[derive(Args)]
 pub struct CreateIssueArgs {
-    /// Jira 项目 Key (如 PROJ 或 PROJSA)
+    /// Jira 项目 Key (如 PROJ)
     #[arg(long, short = 'p', alias = "proj")]
     pub project: String,
     /// 单子标题/概要 (Summary)
@@ -48,7 +48,7 @@ pub struct CreateIssueArgs {
 
 #[derive(Args)]
 pub struct UpdateIssueArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key_or_url: String,
     /// 新的单子标题/概要 (Summary)
     #[arg(long, short = 's', alias = "title", allow_hyphen_values = true)]
@@ -75,7 +75,7 @@ pub struct UpdateIssueArgs {
 
 #[derive(Args)]
 pub struct CommentArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key: String,
     /// 评论正文 (位置参数，与 --body / --text 互为等价输入)
     #[arg(value_name = "BODY", allow_hyphen_values = true)]
@@ -180,7 +180,7 @@ pub enum JiraActions {
     Assign(AssignArgs),
     /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
     User {
-        /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
+        /// 姓名或邮箱关键字 (如 "john" 或 "john.doe@example.com")
         query: String,
         /// 最多返回条数 (默认 10)
         #[arg(long, default_value_t = 10)]
@@ -307,7 +307,7 @@ pub enum JiraActions {
 
 #[derive(Args)]
 pub struct BulkCreateArgs {
-    /// Jira 项目 Key (如 PROJ 或 PROJSA)
+    /// Jira 项目 Key (如 PROJ)
     #[arg(long)]
     pub project: String,
     /// 多个单子标题 (英文逗号分隔,如 "task A,task B,task C")
@@ -341,7 +341,7 @@ pub struct BulkCreateArgs {
 
 #[derive(Args)]
 pub struct CloneArgs {
-    /// 源单子 Key 或网页 URL (如 PROJSA-123)
+    /// 源单子 Key 或网页 URL (如 PROJ-123)
     pub source: String,
     /// 目标项目 Key (默认沿用源单项目)
     #[arg(long)]
@@ -368,7 +368,7 @@ pub struct CloneArgs {
 
 #[derive(Args)]
 pub struct AddWorklogArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key_or_url: String,
     /// 消耗工时时间 (位置参数)
     #[arg(value_name = "TIME_SPENT")]
@@ -396,13 +396,13 @@ impl AddWorklogArgs {
 
 #[derive(Args)]
 pub struct ListWorklogsArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key_or_url: String,
 }
 
 #[derive(Args)]
 pub struct DeleteWorklogArgs {
-    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    /// 单子 Key 或网页 URL (如 PROJ-123 或网页链接)
     pub key_or_url: String,
     /// 要删除的 Worklog ID (可先通过 worklog-list 获取)
     pub worklog_id: String,

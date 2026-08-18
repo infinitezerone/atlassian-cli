@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 
 #[derive(Args)]
 pub struct CreatePageArgs {
-    /// Confluence Space Key (例如 PROJ 或 LLSQAG)
+    /// Confluence Space Key (例如 SPACE 或 ENG)
     #[arg(long, short = 's', alias = "space-key")]
     pub space: String,
     /// 页面标题 (Title)
@@ -49,7 +49,7 @@ pub enum ConfluenceActions {
         /// 仅按页面标题搜索 (默认全文检索)
         #[arg(long, short = 't')]
         title_only: bool,
-        /// 按 Confluence 空间 (Space Key) 过滤 (例如 PROJ 或 LLSQAG)
+        /// 按 Confluence 空间 (Space Key) 过滤 (例如 SPACE 或 ENG)
         #[arg(long, short = 's')]
         space: Option<String>,
         /// 分页起始偏移量 (用于搜索多页结果，默认 0)

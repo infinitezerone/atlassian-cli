@@ -25,7 +25,7 @@ atlassian-cli jira search "project = PROJ" --limit 50 --start-at 0
 atlassian-cli jira suggest-fields
 
 # Resolve candidate values for a field (users, projects, statuses, versions...)
-atlassian-cli jira suggest-values --field assignee --query "John"
+atlassian-cli jira suggest-values --field assignee --query "john"
 ```
 
 - Use the `value` from `suggest-values` results inside the JQL string.
@@ -66,10 +66,10 @@ atlassian-cli jira clone PROJ-123 --summary "CLONE - recurring task" --link --co
 ## Assign Issue & User Search
 ```bash
 # Search assignable users for an issue (matches webpage autocomplete)
-atlassian-cli jira assignable-users PROJ-123 "John"
+atlassian-cli jira assignable-users PROJ-123 "john"
 
 # Look up username & mention_syntax ([~username])
-atlassian-cli jira user "John"
+atlassian-cli jira user "john"
 
 # Assign issue (auto-sanitizes [~username] or @{username} input)
 atlassian-cli jira assign PROJ-123 john.doe --confirm
@@ -79,7 +79,7 @@ atlassian-cli jira assign PROJ-123 john.doe --confirm
 
 ```bash
 # Resolve the real mention_syntax for a person FIRST (never hand-write @names)
-atlassian-cli jira user "John"          # returns mention_syntax: [~john.doe]
+atlassian-cli jira user "john"          # returns mention_syntax: [~john.doe]
 
 # Then use it in comments / descriptions
 atlassian-cli jira comment PROJ-123 "Please review, thanks [~john.doe]" --confirm

@@ -62,7 +62,7 @@ mod tests {
             "https://jira.company.com"
         );
         assert_eq!(
-            normalize_module_url("https://company.com/jira/browse/PROJSA-123?filter=1", "jira"),
+            normalize_module_url("https://company.com/jira/browse/PROJ-123?filter=1", "jira"),
             "https://company.com/jira"
         );
         assert_eq!(

@@ -20,7 +20,7 @@ pub fn validate_jql(jql: &str) -> Result<(), AppError> {
     let j = jql.trim();
     if j.is_empty() {
         return Err(AppError::param_invalid("JQL 为空")
-            .with_suggestion("例如: atlassian-cli jira search \"project = PROJSA AND status != Closed\""));
+            .with_suggestion("例如: atlassian-cli jira search \"project = PROJ AND status != Closed\""));
     }
 
     let mut depth = 0i32;
@@ -72,7 +72,7 @@ pub fn validate_time_spent(input: &str) -> Result<(), AppError> {
     let s = input.trim();
     if s.is_empty() {
         return Err(AppError::param_invalid("工时不能为空")
-            .with_suggestion("例如: atlassian-cli jira worklog-add PROJSA-123 \"2h 30m\" --confirm"));
+            .with_suggestion("例如: atlassian-cli jira worklog-add PROJ-123 \"2h 30m\" --confirm"));
     }
     let mut seen = std::collections::HashSet::new();
     let mut rest = s;
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_validate_jql() {
         assert!(validate_jql("assignee = currentUser() AND status != Closed").is_ok());
-        assert!(validate_jql("project = PROJSA ORDER BY created DESC").is_ok());
+        assert!(validate_jql("project = PROJ ORDER BY created DESC").is_ok());
         assert!(validate_jql("summary ~ \"登录超时\"").is_ok());
         assert!(validate_jql("").is_err());
         assert!(validate_jql("   ").is_err());
