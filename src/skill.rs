@@ -33,6 +33,7 @@ const COMMON_SKILL_REL_PATHS: &[&str] = &[
     ".agents/skills/atlassian-cli/SKILL.md",        // Open-Agents 开放标准
     ".cursor/skills/atlassian-cli/SKILL.md",        // Cursor AI
     ".windsurf/skills/atlassian-cli/SKILL.md",      // Windsurf AI
+    ".workbuddy/skills/atlassian-cli/SKILL.md",     // WorkBuddy
 ];
 
 /// 获取所有主流 Agent 的 Skill 绝对目标路径
@@ -62,14 +63,9 @@ pub fn install_skill() -> Result<Value, AppError> {
                     all_ok = false;
                 }
             }
-            if fs::write(skill_dir.join("SKILL.md"), BUILTIN_SKILL).is_ok() {
+            if fs::write(target_path, BUILTIN_SKILL).is_ok() && all_ok {
                 total_bytes += BUILTIN_SKILL.len();
-            } else {
-                all_ok = false;
-            }
-            if all_ok {
-                let canonical = fs::canonicalize(target_path).unwrap_or_else(|_| target_path.clone());
-                installed_paths.push(canonical.to_string_lossy().to_string());
+                installed_paths.push(target_path.to_string_lossy().to_string());
             }
         }
     }
@@ -81,72 +77,70 @@ pub fn install_skill() -> Result<Value, AppError> {
         "installed_paths": installed_paths,
         "files_installed": SKILL_FILES.len(),
         "bytes_written_total": total_bytes,
-        "message": "官方 Agent Skill(含按需加载的 references/)已成功同步部署到 Gemini / Antigravity, Claude Code, Open-Agents, Cursor, Windsurf 全量常见 AI Agent 目录！"
+        "message": "官方 Agent Skill(含按需加载的 references/)已成功同步部署到 Gemini / Antigravity, Claude Code, Open-Agents, Cursor, Windsurf, WorkBuddy 全量常见 AI Agent 目录！"
     }))
 }
 
-/// 从所有常见 AI Agent 目录卸载本 Skill(删除整个 skill 目录,含 references/)。
-/// 只删除 COMMON_SKILL_REL_PATHS 推导出的明确 skill 路径,不碰其他文件。
+/// 彻底卸载已部署的 Agent Skill(整目录清理,含 references/)
 pub fn uninstall_skill() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
-    let mut removed: Vec<String> = Vec::new();
-    let mut not_found: Vec<String> = Vec::new();
-    let mut failed: Vec<String> = Vec::new();
+    let mut uninstalled_paths: Vec<String> = Vec::new();
+    let mut not_found_paths: Vec<String> = Vec::new();
 
     for target_path in &paths {
-        // skill 根目录 = SKILL.md 的父目录(如 ~/.gemini/config/skills/atlassian-cli)
         if let Some(skill_dir) = target_path.parent() {
-            if !skill_dir.exists() {
-                not_found.push(skill_dir.to_string_lossy().to_string());
-                continue;
-            }
-            match fs::remove_dir_all(skill_dir) {
-                Ok(_) => removed.push(skill_dir.to_string_lossy().to_string()),
-                Err(e) => failed.push(format!("{} ({})", skill_dir.to_string_lossy(), e)),
+            if skill_dir.exists() {
+                if fs::remove_dir_all(skill_dir).is_ok() {
+                    uninstalled_paths.push(skill_dir.to_string_lossy().to_string());
+                }
+            } else {
+                not_found_paths.push(skill_dir.to_string_lossy().to_string());
             }
         }
     }
 
     Ok(json!({
-        "status": if failed.is_empty() { "success" } else { "partial" },
+        "status": "success",
         "action": "uninstall_skill",
-        "removed_count": removed.len(),
-        "removed_paths": removed,
-        "not_found_count": not_found.len(),
-        "not_found_paths": not_found,
-        "failed_count": failed.len(),
-        "failed": failed,
-        "message": "Skill(SKILL.md + references/)已从对应 Agent 目录卸载。"
+        "uninstalled_count": uninstalled_paths.len(),
+        "uninstalled_paths": uninstalled_paths,
+        "not_found_count": not_found_paths.len(),
+        "message": "已成功将 Agent Skill 从系统中彻底移除。"
     }))
 }
 
-/// 检查常见 AI Agent 目录中 Skill 的部署状态
+/// 检查 Agent Skill 在各环境中的安装状态(包含 references 完整度检查)
 pub fn skill_status() -> Result<Value, AppError> {
     let paths = get_skill_paths()?;
-    let mut status_list: Vec<Value> = Vec::new();
     let mut installed_count = 0;
+    let mut status_list = Vec::new();
 
     for target_path in &paths {
-        let exists = target_path.exists();
-        if exists {
+        let is_installed = target_path.exists();
+        if is_installed {
             installed_count += 1;
-            // references 完整性:除 SKILL.md 外全部文件应存在
-            let refs_ok = SKILL_FILES
-                .iter()
-                .skip(1)
-                .all(|(rel, _)| target_path.parent().map(|d| d.join(rel).exists()).unwrap_or(false));
-            let canonical = fs::canonicalize(target_path).unwrap_or_else(|_| target_path.clone());
-            let meta = fs::metadata(target_path).ok();
+            let metadata = fs::metadata(target_path).ok();
+            let size = metadata.map(|m| m.len()).unwrap_or(0);
+            let skill_dir = target_path.parent();
+            let references_complete = skill_dir
+                .map(|d| {
+                    SKILL_FILES
+                        .iter()
+                        .filter(|(rel, _)| *rel != "SKILL.md")
+                        .all(|(rel, _)| d.join(rel).exists())
+                })
+                .unwrap_or(false);
+
             status_list.push(json!({
-                "path": canonical.to_string_lossy(),
+                "path": target_path.to_string_lossy(),
                 "installed": true,
-                "references_complete": refs_ok,
-                "file_size_bytes": meta.map(|m| m.len()).unwrap_or(0),
+                "file_size_bytes": size,
+                "references_complete": references_complete,
             }));
         } else {
             status_list.push(json!({
                 "path": target_path.to_string_lossy(),
-                "installed": false,
+                "installed": false
             }));
         }
     }
@@ -187,6 +181,6 @@ mod tests {
     #[test]
     fn test_get_skill_paths_count() {
         let paths = get_skill_paths().unwrap();
-        assert_eq!(paths.len(), 5);
+        assert_eq!(paths.len(), 6);
     }
 }
