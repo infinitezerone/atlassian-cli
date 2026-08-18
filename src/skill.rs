@@ -43,18 +43,44 @@ pub fn get_skill_paths() -> Result<Vec<PathBuf>, AppError> {
     Ok(COMMON_SKILL_REL_PATHS.iter().map(|p| home.join(p)).collect())
 }
 
-/// 自动将官方 Agent Skill(含 references/)覆盖同步部署到所有常见的 AI Agent 配置目录
+/// 自动将官方 Agent Skill(含 references/)覆盖同步部署到用户本机已安装的 AI Agent 配置目录 (非侵入式)
 pub fn install_skill() -> Result<Value, AppError> {
-    let paths = get_skill_paths()?;
+    let home = dirs_next::home_dir().ok_or_else(|| AppError::generic("无法获取当前用户 Home 目录"))?;
     let mut installed_paths: Vec<String> = Vec::new();
+    let mut skipped_paths: Vec<String> = Vec::new();
     let mut total_bytes = 0usize;
 
-    for target_path in &paths {
-        // target_path = .../skills/atlassian-cli/SKILL.md → 其父目录即 skill 根目录
+    // 检查是否存在至少一个已知 Agent 根目录
+    let any_agent_exists = COMMON_SKILL_REL_PATHS.iter().any(|rel| {
+        if let Some(top) = std::path::Path::new(rel).components().next() {
+            let top_str = top.as_os_str().to_string_lossy();
+            top_str != ".agents" && home.join(top_str.as_ref()).exists()
+        } else {
+            false
+        }
+    });
+
+    for rel_path in COMMON_SKILL_REL_PATHS {
+        let top_level = std::path::Path::new(rel_path)
+            .components()
+            .next()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let base_exists = home.join(&top_level).exists();
+
+        // 仅在对应 Agent 根目录已存在时部署; 若全量均未安装,则仅保留 .agents 作为标准回退
+        let should_install = base_exists || (!any_agent_exists && top_level == ".agents");
+
+        let target_path = home.join(rel_path);
+
+        if !should_install {
+            skipped_paths.push(target_path.to_string_lossy().to_string());
+            continue;
+        }
+
         if let Some(skill_dir) = target_path.parent() {
             let _ = fs::create_dir_all(skill_dir.join("references"));
-            // 写入顺序:先 references、最后 SKILL.md —— 若中途失败,SKILL.md 仍是旧的自包含版,
-            // 不会出现"新 SKILL.md 引用缺失 references"的不完整中间态(升级兼容加固)
             let mut all_ok = true;
             for (rel, content) in SKILL_FILES.iter().filter(|(rel, _)| *rel != "SKILL.md") {
                 let full = skill_dir.join(rel);
@@ -64,7 +90,7 @@ pub fn install_skill() -> Result<Value, AppError> {
                     all_ok = false;
                 }
             }
-            if fs::write(target_path, BUILTIN_SKILL).is_ok() && all_ok {
+            if fs::write(&target_path, BUILTIN_SKILL).is_ok() && all_ok {
                 total_bytes += BUILTIN_SKILL.len();
                 installed_paths.push(target_path.to_string_lossy().to_string());
             }
@@ -76,9 +102,11 @@ pub fn install_skill() -> Result<Value, AppError> {
         "action": "install_skill",
         "installed_count": installed_paths.len(),
         "installed_paths": installed_paths,
+        "skipped_count": skipped_paths.len(),
+        "skipped_paths": skipped_paths,
         "files_installed": SKILL_FILES.len(),
         "bytes_written_total": total_bytes,
-        "message": "官方 Agent Skill(含按需加载的 references/)已成功同步部署到 Gemini / Antigravity, Claude Code, Open-Agents, Cursor, Windsurf, WorkBuddy 全量常见 AI Agent 目录！"
+        "message": "已按用户本机实际安装的 AI Agent 环境精准同步部署技能规约 (未安装的 Agent 环境已自动跳过,不产生空目录污染)。"
     }))
 }
 
