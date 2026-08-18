@@ -33,10 +33,12 @@ atlassian-cli jira suggest-values --field assignee --query "John"
 
 ## Add / Edit / Delete Comments
 ```bash
-atlassian-cli jira comment PROJ-123 "Analysis completed. Pending code review." --confirm
+# Add comment (supports --body / --text or positional argument)
+atlassian-cli jira comment PROJ-123 --body "Analysis completed. Pending code review." --confirm
+atlassian-cli jira comment PROJ-123 "Analysis completed." --confirm
 
 # Get the comment id first (jira get returns comments[].id), then:
-atlassian-cli jira comment-update PROJ-123 10001 "Revised comment text" --confirm
+atlassian-cli jira comment-update PROJ-123 10001 --body "Revised comment text" --confirm
 atlassian-cli jira comment-delete PROJ-123 10001 --confirm
 ```
 
