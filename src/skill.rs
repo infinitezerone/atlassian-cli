@@ -34,6 +34,7 @@ const COMMON_SKILL_REL_PATHS: &[&str] = &[
     ".cursor/skills/atlassian-cli/SKILL.md",        // Cursor AI
     ".windsurf/skills/atlassian-cli/SKILL.md",      // Windsurf AI
     ".workbuddy/skills/atlassian-cli/SKILL.md",     // WorkBuddy
+    ".codebuddy/skills/atlassian-cli/SKILL.md",     // CodeBuddy
 ];
 
 /// 获取所有主流 Agent 的 Skill 绝对目标路径
@@ -181,6 +182,6 @@ mod tests {
     #[test]
     fn test_get_skill_paths_count() {
         let paths = get_skill_paths().unwrap();
-        assert_eq!(paths.len(), 6);
+        assert_eq!(paths.len(), 7);
     }
 }
