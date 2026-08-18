@@ -104,6 +104,9 @@ mod tests {
         }
         let body = json!({ "x": 1 });
         assert!(check("POST", "/p", Some(&body)).is_none()); // 窗口 0 = 关闭,不查询
+        unsafe {
+            std::env::remove_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW");
+        }
     }
 
     #[test]
@@ -115,6 +118,10 @@ mod tests {
         }
         let body = json!({ "x": 1 });
         assert!(check("POST", "/p", Some(&body)).is_none()); // 强制绕过,不查询
+        unsafe {
+            std::env::remove_var("ATLASSIAN_CLI_FORCE_WRITE");
+            std::env::remove_var("ATLASSIAN_CLI_IDEMPOTENCY_WINDOW");
+        }
     }
 
     #[test]
