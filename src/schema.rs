@@ -143,7 +143,7 @@ mod tests {
             .filter_map(|a| a["name"].as_str())
             .collect();
         assert!(arg_names.contains(&"key"));
-        assert!(arg_names.contains(&"text"));
+        assert!(arg_names.contains(&"body") || arg_names.contains(&"body_pos"));
     }
 
     #[test]

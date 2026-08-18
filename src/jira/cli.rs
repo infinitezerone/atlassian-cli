@@ -18,25 +18,25 @@ pub struct GetIssueArgs {
 #[derive(Args)]
 pub struct CreateIssueArgs {
     /// Jira 项目 Key (如 PROJ 或 PROJSA)
-    #[arg(long)]
+    #[arg(long, short = 'p', alias = "proj")]
     pub project: String,
     /// 单子标题/概要 (Summary)
-    #[arg(long)]
+    #[arg(long, short = 's', alias = "title")]
     pub summary: String,
     /// 单子类型 (默认 Task，可选 Bug / Story / Task 等)
-    #[arg(long, default_value = "Task")]
+    #[arg(long, short = 't', alias = "type", default_value = "Task")]
     pub issue_type: String,
     /// 单子详细描述 (Description)
-    #[arg(long)]
+    #[arg(long, short = 'd', alias = "desc", alias = "body")]
     pub description: Option<String>,
     /// 标签列表 (英文逗号分隔，如 "bug,backend")
-    #[arg(long)]
+    #[arg(long, short = 'l', alias = "label")]
     pub labels: Option<String>,
     /// 指派人用户名 (Assignee username)
-    #[arg(long)]
+    #[arg(long, short = 'a', alias = "user")]
     pub assignee: Option<String>,
     /// 优先级 (Priority，如 High / Medium / Low)
-    #[arg(long)]
+    #[arg(long, alias = "prio")]
     pub priority: Option<String>,
     /// 自定义字段赋值 (支持多次传入,如 --custom "customfield_10020=5" --custom "customfield_10010=PROJ-10")
     #[arg(long, value_name = "KEY=VAL")]
@@ -51,19 +51,19 @@ pub struct UpdateIssueArgs {
     /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
     pub key_or_url: String,
     /// 新的单子标题/概要 (Summary)
-    #[arg(long)]
+    #[arg(long, short = 's', alias = "title")]
     pub summary: Option<String>,
     /// 新的单子详细描述 (Description)
-    #[arg(long)]
+    #[arg(long, short = 'd', alias = "desc", alias = "body")]
     pub description: Option<String>,
     /// 指派人用户名 (Assignee username)
-    #[arg(long)]
+    #[arg(long, short = 'a', alias = "user")]
     pub assignee: Option<String>,
     /// 优先级 (Priority，如 High / Medium / Low)
-    #[arg(long)]
+    #[arg(long, alias = "prio")]
     pub priority: Option<String>,
     /// 标签列表 (英文逗号分隔，如 "bug,backend")
-    #[arg(long)]
+    #[arg(long, short = 'l', alias = "label")]
     pub labels: Option<String>,
     /// 自定义字段赋值 (支持多次传入,如 --custom "customfield_10020=5" --custom "customfield_10010=PROJ-10")
     #[arg(long, value_name = "KEY=VAL")]
@@ -73,22 +73,83 @@ pub struct UpdateIssueArgs {
     pub custom_json: Option<String>,
 }
 
+#[derive(Args)]
+pub struct CommentArgs {
+    /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
+    pub key: String,
+    /// 评论正文 (位置参数，与 --body / --text 互为等价输入)
+    #[arg(value_name = "BODY")]
+    pub body_pos: Option<String>,
+    /// 评论正文 (命名参数，别名 --text, --comment, -b)
+    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    pub body: Option<String>,
+}
+
+impl CommentArgs {
+    pub fn get_text(&self) -> Result<&str, crate::error::AppError> {
+        self.body
+            .as_deref()
+            .or(self.body_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| crate::error::AppError::param_invalid("缺少评论正文内容 (请通过位置参数或 --body / --text 传入)"))
+    }
+}
+
+#[derive(Args)]
+pub struct CommentUpdateArgs {
+    /// 单子 Key 或网页 URL
+    pub key: String,
+    /// 评论 ID (jira get 返回的 comments[].id)
+    pub comment_id: String,
+    /// 新的评论正文 (位置参数，与 --body / --text 互为等价输入)
+    #[arg(value_name = "BODY")]
+    pub body_pos: Option<String>,
+    /// 新的评论正文 (命名参数，别名 --text, --comment, -b)
+    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    pub body: Option<String>,
+}
+
+impl CommentUpdateArgs {
+    pub fn get_text(&self) -> Result<&str, crate::error::AppError> {
+        self.body
+            .as_deref()
+            .or(self.body_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| crate::error::AppError::param_invalid("缺少评论正文内容 (请通过位置参数或 --body / --text 传入)"))
+    }
+}
+
+#[derive(Args)]
+pub struct AssignArgs {
+    /// 单子 Key 或网页 URL
+    pub key: String,
+    /// 经办人用户名 (位置参数)
+    #[arg(value_name = "ASSIGNEE")]
+    pub assignee_pos: Option<String>,
+    /// 经办人用户名 (命名参数，别名 --user, -a, --assignee)
+    #[arg(long, short = 'a', alias = "user", alias = "assignee")]
+    pub user: Option<String>,
+}
+
+impl AssignArgs {
+    pub fn get_assignee(&self) -> Result<&str, crate::error::AppError> {
+        self.user
+            .as_deref()
+            .or(self.assignee_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| crate::error::AppError::param_invalid("缺少经办人用户名 (请通过位置参数或 --user / --assignee 传入)"))
+    }
+}
+
 /// Jira 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum JiraActions {
     /// 查询单子详情 (支持 Key 或网页 URL，支持 --raw 原始全量输出与 --fields 指定字段)
     Get(GetIssueArgs),
-    /// 在单子里加评论
-    Comment { key: String, text: String },
-    /// 编辑单子上的已有评论 (需先通过 jira get 获取 comment_id)
-    CommentUpdate {
-        /// 单子 Key 或网页 URL
-        key: String,
-        /// 评论 ID (jira get 返回的 comments[].id)
-        comment_id: String,
-        /// 新的评论内容
-        text: String,
-    },
+    /// 在单子里加评论 (支持位置参数与 --body / --text)
+    Comment(CommentArgs),
+    /// 编辑单子上的已有评论 (需先通过 jira get 获取 comment_id，支持位置参数与 --body / --text)
+    CommentUpdate(CommentUpdateArgs),
     /// 删除单子上的评论 (需先通过 jira get 获取 comment_id)
     CommentDelete {
         /// 单子 Key 或网页 URL
@@ -115,13 +176,8 @@ pub enum JiraActions {
     Create(CreateIssueArgs),
     /// 更新已有 Jira 单子属性 (支持 Key 或网页 URL)
     Update(UpdateIssueArgs),
-    /// 快捷指派/变更经办人 (支持 Key 或网页 URL)
-    Assign {
-        /// 单子 Key 或网页 URL
-        key: String,
-        /// 经办人用户名 (Assignee username)
-        assignee: String,
-    },
+    /// 快捷指派/变更经办人 (支持 Key 或网页 URL，支持位置参数与 --user / --assignee)
+    Assign(AssignArgs),
     /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
     User {
         /// 姓名或邮箱关键字 (如 "John" 或 "john.doe@...")
@@ -314,14 +370,28 @@ pub struct CloneArgs {
 pub struct AddWorklogArgs {
     /// 单子 Key 或网页 URL (如 PROJSA-123 或网页链接)
     pub key_or_url: String,
-    /// 消耗工时时间 (支持 "2h 30m" / "1d" / "45m" 等标准格式)
-    pub time_spent: String,
-    /// 工时日志备注说明 (可选)
-    #[arg(long, short = 'm')]
+    /// 消耗工时时间 (位置参数)
+    #[arg(value_name = "TIME_SPENT")]
+    pub time_pos: Option<String>,
+    /// 消耗工时时间 (命名参数，别名 --time, --spent, -t)
+    #[arg(long, short = 't', alias = "time", alias = "spent")]
+    pub time_spent: Option<String>,
+    /// 工时日志备注说明 (可选，别名 --comment, -c, -m, --body, --text, --desc)
+    #[arg(long, short = 'm', short_alias = 'c', alias = "comment", alias = "body", alias = "text", alias = "desc")]
     pub comment: Option<String>,
     /// 开始时间 (可选，格式 "YYYY-MM-DD" 或 "YYYY-MM-DDTHH:MM:SS"，不传默认为当前时间)
-    #[arg(long)]
+    #[arg(long, short = 's', alias = "date", alias = "start")]
     pub started: Option<String>,
+}
+
+impl AddWorklogArgs {
+    pub fn get_time_spent(&self) -> Result<&str, crate::error::AppError> {
+        self.time_spent
+            .as_deref()
+            .or(self.time_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| crate::error::AppError::param_invalid("缺少工时参数 (请通过位置参数或 --time-spent / --time 传入，如 '2h 30m')"))
+    }
 }
 
 #[derive(Args)]

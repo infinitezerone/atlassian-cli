@@ -32,9 +32,9 @@ impl AtlassianModule for Jira {
     async fn handle(&self, action: JiraActions) -> Result<Value, AppError> {
         match action {
             JiraActions::Get(a) => self.get_issue(&a).await,
-            JiraActions::Comment { key, text } => self.add_comment(&key, &text).await,
-            JiraActions::CommentUpdate { key, comment_id, text } => {
-                self.update_comment(&key, &comment_id, &text).await
+            JiraActions::Comment(a) => self.add_comment(&a.key, a.get_text()?).await,
+            JiraActions::CommentUpdate(a) => {
+                self.update_comment(&a.key, &a.comment_id, a.get_text()?).await
             }
             JiraActions::CommentDelete { key, comment_id } => {
                 self.delete_comment(&key, &comment_id).await
@@ -45,7 +45,7 @@ impl AtlassianModule for Jira {
             }
             JiraActions::Create(a) => self.create_issue(&a).await,
             JiraActions::Update(a) => self.update_issue(&a).await,
-            JiraActions::Assign { key, assignee } => self.assign_issue(&key, &assignee).await,
+            JiraActions::Assign(a) => self.assign_issue(&a.key, a.get_assignee()?).await,
             JiraActions::User { query, limit } => self.search_users(&query, limit).await,
             JiraActions::AssignableUsers { key, query, limit } => {
                 self.search_assignable_users(&key, query.as_deref(), limit).await
