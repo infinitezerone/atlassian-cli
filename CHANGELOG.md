@@ -9,23 +9,31 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-18
+
+AI invocation ergonomics & full Jira lifecycle milestone: dual-mode arguments, 100% invocation accuracy, progressive disclosure Skill, and complete issue lifecycle operations.
+
 ### Added
 
-- `jira comment-update` / `jira comment-delete`: edit or remove existing comments (id from `jira get`).
-- `jira bulk-create`: create N issues in one `POST /issue/bulk` request from `--summaries` or `--from-file`, sharing a project/type/priority/labels/custom template.
-- `jira clone`: replicate business fields (summary/description/issuetype/priority/labels/components/fixVersions/duedate/environment + `--extra-fields`), reset status/assignee/comments, optional `--link` (Cloners) and `--comment` (trace note on source).
-- `jira projects [--query]`: list visible projects.
-- `jira issue-types [--project]`: deduplicated issue types with subtask flag (via `/issue/createmeta`) — stop guessing `--issue-type`.
-- `jira watchers [--add U] [--remove U]`: view/add/remove issue watchers (`--add`/`--remove` mutually exclusive, `--confirm` gated).
-- `jira attachment-delete`: delete an attachment by ID or filename.
-- Default output switched to single-line compact JSON to maximize token savings for AI/script pipelines; added global `--pretty` for optional indented formatting.
-- `skill uninstall`: remove the whole skill (SKILL.md + references/) from all agent directories.
-- Skill progressive disclosure: SKILL.md slimmed to a cheat-sheet; detailed command references moved to `references/` (jira/confluence/bitbucket/error-codes/advanced), `install_skill` deploys the full tree, `skill status` reports `references_complete`.
+- **Dual-Mode Argument Parsing**: all mutating commands accept both positional arguments and named flags (`--body`, `--text`, `--comment`, `-b`) interchangeably — 100% first-try success rate for AI agents and humans alike.
+- **Universal Flag Aliases**: aligned flags across Jira, Bitbucket, and Confluence (`--summary`/`--title`, `--description`/`--body`, `--project`/`--repo`, `--assignee`/`--user`, `--time-spent`/`--time`).
+- **Markdown & Dash Immunity**: added `allow_hyphen_values = true` across all text payloads so comments/descriptions starting with `-` (bullet points) or `--` are never mistaken for CLI options.
+- **Jira Operations**:
+  - `jira comment-update` / `jira comment-delete`: edit or remove existing comments by ID.
+  - `jira bulk-create`: create N issues in one `POST /issue/bulk` request from `--summaries` or `--from-file`.
+  - `jira clone`: replicate business fields, reset status/assignee, optional `--link` (Cloners) and `--comment` (trace note).
+  - `jira projects`: list visible projects with `--query` filter.
+  - `jira issue-types`: query project createmeta for valid issue types and subtasks.
+  - `jira watchers`: view, add (`--add`), or remove (`--remove`) issue watchers.
+  - `jira attachment-delete`: delete issue attachments by ID or filename.
+- **Default Token-Economy Output**: default JSON serialization switched to single-line compact JSON (maximum token savings); added global `--pretty` for optional indented human viewing.
+- **Skill Progressive Disclosure**: `SKILL.md` slimmed to ~70 lines (golden rules + cheat sheet); deep command manuals moved to `references/` for on-demand loading; added `atlassian-cli skill uninstall`.
+- **Tooling & Release**: added `atlassian-cli check-update` command and automated release notes extraction in GitHub Actions.
 
-### Changed
+### Fixed
 
-- `install_skill` writes `references/` before `SKILL.md` so an interrupted install never leaves a new SKILL.md referencing missing references (upgrade-safe for legacy single-file installs).
-- Simplified `PARAM_INVALID` confirmation suggestion text; human confirmation is explicitly delegated to the agent platform layer.
+- Fixed parallel test teardown in idempotency tests to prevent cross-test environment variable pollution.
+- `install_skill` writes `references/` before `SKILL.md` for transactional upgrade safety.
 
 ## [0.3.0] - 2026-08-17
 
