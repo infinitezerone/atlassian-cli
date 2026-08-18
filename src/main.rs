@@ -40,9 +40,9 @@ struct Cli {
     #[arg(long, global = true)]
     confirm: bool,
 
-    /// 紧凑 JSON 输出 (单行无缩进,省 Token,供 AI/脚本管道使用;默认 pretty 便于人类阅读)
+    /// 格式化 Pretty-Printed JSON 输出 (带缩进换行;默认紧凑单行 JSON,最大化节省 Token)
     #[arg(long, global = true)]
-    compact: bool,
+    pretty: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -158,14 +158,14 @@ async fn main() {
                 exit(0);
             }
             let err = AppError::param_invalid(format!("参数解析失败: {}", e));
-            eprintln!("{}", serde_json::to_string_pretty(&err.to_json()).unwrap());
+            eprintln!("{}", serde_json::to_string(&err.to_json()).unwrap());
             exit(err.code.exit_code());
         }
     };
     let mut cfg = match config::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", json_output(&e.to_json(), cli.compact));
+            eprintln!("{}", json_output(&e.to_json(), cli.pretty));
             exit(e.code.exit_code());
         }
     };
@@ -220,21 +220,21 @@ async fn main() {
             if security::sanitize_all_strings(&mut v) {
                 v["sanitized"] = json!(true);
             }
-            println!("{}", json_output(&v, cli.compact));
+            println!("{}", json_output(&v, cli.pretty));
         }
         Err(e) => {
-            eprintln!("{}", json_output(&e.to_json(), cli.compact));
+            eprintln!("{}", json_output(&e.to_json(), cli.pretty));
             exit(e.code.exit_code());
         }
     }
 }
 
-/// 按 --compact 选择 JSON 序列化格式:紧凑单行(省 Token)或 pretty(人类可读)
-fn json_output(v: &serde_json::Value, compact: bool) -> String {
-    if compact {
-        serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string())
-    } else {
+/// 按 --pretty 选择 JSON 序列化格式:默认单行紧凑 JSON (最省 Token),指定 --pretty 则格式化输出
+fn json_output(v: &serde_json::Value, pretty: bool) -> String {
+    if pretty {
         serde_json::to_string_pretty(v).unwrap_or_else(|_| "{}".to_string())
+    } else {
+        serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string())
     }
 }
 

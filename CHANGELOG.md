@@ -18,7 +18,7 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 - `jira issue-types [--project]`: deduplicated issue types with subtask flag (via `/issue/createmeta`) — stop guessing `--issue-type`.
 - `jira watchers [--add U] [--remove U]`: view/add/remove issue watchers (`--add`/`--remove` mutually exclusive, `--confirm` gated).
 - `jira attachment-delete`: delete an attachment by ID or filename.
-- Global `--compact`: single-line compact JSON output to save tokens for AI/script pipelines.
+- Default output switched to single-line compact JSON to maximize token savings for AI/script pipelines; added global `--pretty` for optional indented formatting.
 - `skill uninstall`: remove the whole skill (SKILL.md + references/) from all agent directories.
 - Skill progressive disclosure: SKILL.md slimmed to a cheat-sheet; detailed command references moved to `references/` (jira/confluence/bitbucket/error-codes/advanced), `install_skill` deploys the full tree, `skill status` reports `references_complete`.
 
