@@ -3,16 +3,16 @@ use clap::{Args, Subcommand};
 #[derive(Args)]
 pub struct CreatePageArgs {
     /// Confluence Space Key (例如 PROJ 或 LLSQAG)
-    #[arg(long)]
+    #[arg(long, short = 's', alias = "space-key")]
     pub space: String,
     /// 页面标题 (Title)
-    #[arg(long)]
+    #[arg(long, short = 't', alias = "summary", alias = "name")]
     pub title: String,
     /// 页面正文内容 (支持纯文本/HTML/Markdown 及时间宏 `<time datetime="..."/>` 与 Jira 动态卡片宏)
-    #[arg(long)]
+    #[arg(long, short = 'b', alias = "text", alias = "content")]
     pub body: String,
     /// 父页面 ID (可选，指定则在此父页面下新建)
-    #[arg(long)]
+    #[arg(long, alias = "parent")]
     pub parent_id: Option<String>,
 }
 
@@ -21,10 +21,10 @@ pub struct UpdatePageArgs {
     /// 页面 ID 或网页 URL (例如 224527717 或网页链接)
     pub id_or_url: String,
     /// 新的页面标题 (可选，不提供则保留原标题)
-    #[arg(long)]
+    #[arg(long, short = 't', alias = "summary", alias = "name")]
     pub title: Option<String>,
     /// 新的全量页面正文 (可选，全量覆盖)
-    #[arg(long)]
+    #[arg(long, short = 'b', alias = "text", alias = "content")]
     pub body: Option<String>,
     /// 局部原子替换：需寻找的目标旧文本 (需包含唯一上下文段落，与 --replace 配对)
     #[arg(long)]

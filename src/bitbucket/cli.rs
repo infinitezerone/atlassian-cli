@@ -22,21 +22,24 @@ pub struct ListPrsArgs {
 #[derive(Args)]
 pub struct CommentPrArgs {
     /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
+    #[arg(long, short = 'p', alias = "proj")]
     pub project: Option<String>,
     /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
-    #[arg(long)]
+    #[arg(long, short = 'r', alias = "repository")]
     pub repo: Option<String>,
     /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
     pub id_or_url: String,
-    /// 评论文本内容
-    #[arg(long)]
-    pub text: String,
+    /// 评论文本内容 (位置参数)
+    #[arg(value_name = "BODY")]
+    pub body_pos: Option<String>,
+    /// 评论文本内容 (命名参数，别名 --body, -b, --text, --comment)
+    #[arg(long, short = 'b', alias = "text", alias = "comment")]
+    pub body: Option<String>,
     /// 行内评论的目标文件相对路径 (如 src/main.rs，不指定则为 PR 全局评论)
-    #[arg(long)]
+    #[arg(long, short = 'f', alias = "path")]
     pub file: Option<String>,
     /// 行内评论的目标代码行号 (如 42)
-    #[arg(long)]
+    #[arg(long, short = 'l')]
     pub line: Option<u32>,
     /// 目标代码行的 Diff 类型 (默认 ADDED，可选 ADDED / REMOVED / CONTEXT)
     #[arg(long, default_value = "ADDED")]
@@ -46,28 +49,38 @@ pub struct CommentPrArgs {
     pub file_type: String,
 }
 
+impl CommentPrArgs {
+    pub fn get_text(&self) -> Result<&str, crate::error::AppError> {
+        self.body
+            .as_deref()
+            .or(self.body_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| crate::error::AppError::param_invalid("缺少 PR 评论正文内容 (请通过位置参数或 --body / --text 传入)"))
+    }
+}
+
 #[derive(Args)]
 pub struct CreatePrArgs {
     /// Bitbucket Project 名 (例如 PROJ)
-    #[arg(long)]
+    #[arg(long, short = 'p', alias = "proj")]
     pub project: String,
     /// Bitbucket Repo 名 (例如 my-repo)
-    #[arg(long)]
+    #[arg(long, short = 'r', alias = "repository")]
     pub repo: String,
     /// PR 标题/概要 (Summary)
-    #[arg(long)]
+    #[arg(long, short = 't', alias = "summary")]
     pub title: String,
     /// PR 详细描述 (Description)
-    #[arg(long, default_value = "")]
+    #[arg(long, short = 'd', alias = "desc", alias = "body", default_value = "")]
     pub description: String,
     /// 源分支名 (如 feature/add-login)
-    #[arg(long)]
+    #[arg(long, short = 'f', alias = "source", alias = "src", alias = "from-branch")]
     pub from: String,
     /// 目标分支名 (如 main 或 release/6.2.0)
-    #[arg(long)]
+    #[arg(long, alias = "target", alias = "dest", alias = "to-branch")]
     pub to: String,
     /// 手动指定的额外 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @{john.doe})
-    #[arg(long)]
+    #[arg(long, alias = "reviewer")]
     pub reviewers: Option<String>,
     /// 不自动加载 Bitbucket 网页端预设的 Default Reviewers (默认 false，即自动包含预设)
     #[arg(long, default_value_t = false)]

@@ -371,7 +371,8 @@ impl Bitbucket {
             urlencoding::encode(&pr_id)
         );
 
-        let mut body = json!({ "text": a.text });
+        let comment_text = a.get_text()?;
+        let mut body = json!({ "text": comment_text });
 
         if let Some(ref file_path) = a.file {
             let mut anchor = serde_json::Map::new();

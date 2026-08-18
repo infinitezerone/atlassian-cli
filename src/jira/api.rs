@@ -1107,8 +1107,9 @@ impl Jira {
         let key = parse_jira_key(&a.key_or_url);
         let path = format!("/rest/api/2/issue/{}/worklog", urlencoding::encode(&key));
 
+        let time_spent = a.get_time_spent()?;
         // 字段值校验:拦 AI 常见的工时格式错 / 开始时间错 / 提及语法错
-        crate::utils::validate_time_spent(&a.time_spent)?;
+        crate::utils::validate_time_spent(time_spent)?;
         if let Some(ref c) = a.comment {
             if !c.trim().is_empty() {
                 crate::utils::validate_mentions(c)?;
@@ -1121,7 +1122,7 @@ impl Jira {
         }
 
         let mut body = json!({
-            "timeSpent": a.time_spent.trim(),
+            "timeSpent": time_spent.trim(),
         });
 
         if let Some(ref c) = a.comment {
@@ -1149,7 +1150,7 @@ impl Jira {
             "status": "success",
             "issue_key": key,
             "worklog_id": raw["id"].as_str().unwrap_or(""),
-            "time_spent": raw["timeSpent"].as_str().unwrap_or(&a.time_spent),
+            "time_spent": raw["timeSpent"].as_str().unwrap_or(time_spent),
             "started": raw["started"].as_str().unwrap_or(""),
             "author": raw["author"]["displayName"].as_str().or(raw["author"]["name"].as_str()).unwrap_or(""),
             "comment": raw["comment"].as_str().unwrap_or(""),
