@@ -6,7 +6,7 @@ mod metadata;
 mod transition;
 mod worklog;
 
-pub use cli::JiraActions;
+pub use cli::*;
 
 use serde_json::Value;
 

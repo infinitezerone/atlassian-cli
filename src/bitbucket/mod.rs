@@ -2,7 +2,7 @@ mod api;
 mod cli;
 
 pub use api::Bitbucket;
-pub use cli::BitbucketActions;
+pub use cli::*;
 
 use serde_json::Value;
 

@@ -2,7 +2,7 @@ mod api;
 mod cli;
 
 pub use api::Confluence;
-pub use cli::ConfluenceActions;
+pub use cli::*;
 
 use serde_json::Value;
 

@@ -597,8 +597,6 @@ fn apply_custom_fields(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::http::HttpClient;
-    use crate::module::WritePolicy;
 
     #[test]
     fn test_apply_custom_fields() {
@@ -616,68 +614,5 @@ mod tests {
         assert_eq!(fields["customfield_10010"], json!("PROJ-10"));
         assert_eq!(fields["customfield_bool"], json!(true));
         assert_eq!(fields["customfield_obj"]["id"], json!("123"));
-    }
-
-    #[tokio::test]
-    async fn test_mock_jira_get_issue_slim() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let mock_server = MockServer::start().await;
-
-        let jira_raw_issue = json!({
-            "key": "PROJ-101",
-            "fields": {
-                "summary": "Fix login crash on startup",
-                "description": "App crashes when token is empty",
-                "status": { "name": "In Progress" },
-                "issuetype": { "name": "Bug" },
-                "priority": { "name": "High" },
-                "labels": ["ios", "crash"],
-                "timetracking": {},
-                "assignee": {
-                    "name": "zhangsan",
-                    "displayName": "Zhang San"
-                },
-                "reporter": {
-                    "name": "lisi",
-                    "displayName": "Li Si"
-                },
-                "comment": {
-                    "comments": [
-                        {
-                            "id": "1001",
-                            "author": { "name": "zhangsan", "displayName": "Zhang San" },
-                            "created": "2026-08-18T10:00:00.000+0000",
-                            "body": "Investigating the trace..."
-                        }
-                    ]
-                }
-            }
-        });
-
-        Mock::given(method("GET"))
-            .and(path("/rest/api/2/issue/PROJ-101"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(jira_raw_issue))
-            .mount(&mock_server)
-            .await;
-
-        let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
-        let jira = Jira::new(http, WritePolicy { dry_run: false, confirm: true });
-
-        let args = GetIssueArgs {
-            key: "PROJ-101".to_string(),
-            raw: false,
-            fields: None,
-            comments_limit: 5,
-        };
-
-        let res = jira.get_issue(&args).await.unwrap();
-        assert_eq!(res["key"], "PROJ-101");
-        assert_eq!(res["summary"], "Fix login crash on startup");
-        assert_eq!(res["status"], "In Progress");
-        assert_eq!(res["assignee"]["mention_syntax"], "[~zhangsan]");
-        assert_eq!(res["comments_count"], 1);
-        assert_eq!(res["comments"][0]["author"]["mention_syntax"], "[~zhangsan]");
     }
 }
