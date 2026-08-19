@@ -125,11 +125,11 @@ jobs:
             echo "TAP_GITHUB_TOKEN not configured, skipping Homebrew Tap update."
           fi
 
-      - name: Download macOS Release Asset
+      - name: Download All Release Assets
         if: steps.check_token.outputs.has_token == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: atlassian-cli-aarch64-apple-darwin.tar.gz
+          path: tap-artifacts
 
       - name: Checkout Homebrew Tap
         if: steps.check_token.outputs.has_token == 'true'
@@ -144,13 +144,58 @@ jobs:
         run: |
           TAG_NAME="${{ inputs.tag || github.ref_name }}"
           VERSION="${TAG_NAME#v}"
-          SHA256=$(sha256sum atlassian-cli-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          echo "Updating Homebrew Formula: Version=${VERSION}, SHA256=${SHA256}"
+          MAC_TAR=$(find tap-artifacts -type f -name "*darwin*.tar.gz" | head -n 1)
+          LINUX_TAR=$(find tap-artifacts -type f -name "*linux*.tar.gz" | head -n 1)
+          MAC_SHA=$(sha256sum "$MAC_TAR" | awk '{print $1}')
+          LINUX_SHA=$(sha256sum "$LINUX_TAR" | awk '{print $1}')
+
+          echo "Updating Homebrew Formula: Version=${VERSION}"
+          echo "macOS SHA256=${MAC_SHA}"
+          echo "Linux SHA256=${LINUX_SHA}"
 
           cd homebrew-tap
           FORMULA="Formula/atlassian-cli.rb"
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" "$FORMULA"
-          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" "$FORMULA"
+          cat > "$FORMULA" << EOF
+          class AtlassianCli < Formula
+            desc "Unified AI-native CLI for Atlassian (Jira + Confluence + Bitbucket)"
+            homepage "https://github.com/infinitezerone/atlassian-cli"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              url "https://github.com/infinitezerone/atlassian-cli/releases/download/v#{version}/atlassian-cli-aarch64-apple-darwin.tar.gz"
+              sha256 "${MAC_SHA}"
+            end
+
+            on_linux do
+              url "https://github.com/infinitezerone/atlassian-cli/releases/download/v#{version}/atlassian-cli-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${LINUX_SHA}"
+            end
+
+            def install
+              bin.install "atlassian-cli"
+            end
+
+            def caveats
+              <<~EOS
+                🎉 安装/升级完成！
+                若要在当前终端窗口立即使用，请运行:
+                  exec \$SHELL   (或直接打开一个新的终端窗口)
+
+                👉 运行以下命令完成接入配置:
+                  atlassian-cli login
+
+                🤖 运行以下命令一键部署官方 AI Agent Skill:
+                  atlassian-cli skill install
+              EOS
+            end
+
+            test do
+              assert_match "atlassian-cli", shell_output("#{bin}/atlassian-cli --help")
+            end
+          end
+          EOF
+          sed -i 's/^          //' "$FORMULA"
 
           git config user.name "Infinite Zerone"
           git config user.email "infinitezerone@users.noreply.github.com"
