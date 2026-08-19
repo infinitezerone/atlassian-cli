@@ -1,6 +1,7 @@
 ---
 name: atlassian-cli
-description: 管理与操作私有部署 Atlassian 全家桶（Jira 工单、Confluence 企业知识库、Bitbucket 代码评审）。
+description: >-
+  管理与操作私有部署 Atlassian 全家桶（Jira 工单系统、Confluence 企业知识库、Bitbucket 代码评审）。
   触发场景 (Trigger Scenarios)：
   1. 用户提及任何 Jira 单号（如 PROJ-123, ABC-456）或网页链接（https://.../browse/PROJ-123）。
   2. 询问任务、Bug 或工单：“我有哪些未完成的票”、“今天有哪些Bug”、“查下单子”、“帮我建个Task”、“转为已解决/In Progress”、“指派给某人”、“批量建单”、“克隆单子”。
