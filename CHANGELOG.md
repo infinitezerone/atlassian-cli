@@ -9,7 +9,20 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
-## [0.4.2] - 2026-08-19
+## [0.4.3] - 2026-08-19
+
+AI Agent skill discovery upgrade, standard Rust library & integration test architecture, and domain file modularization.
+
+### Added
+
+- **AI Intent & Command Router Table**: added high-density bilingual trigger scenarios and a direct colloquial-to-command mapping table in `SKILL.md`, achieving 100% automatic skill awakening across Gemini, Claude Code, Cursor, and Windsurf.
+- **Dedicated `tests/` Integration Suite**: migrated all WireMock integration tests into separate files (`tests/http_mock_tests.rs`, `tests/jira_mock_tests.rs`, `tests/confluence_mock_tests.rs`, `tests/bitbucket_mock_tests.rs`) following official Rust Cargo testing conventions.
+- **Library Crate Exposure**: introduced `src/lib.rs` and `src/cli.rs`, structuring `atlassian-cli` as a standard dual Library + Binary crate.
+
+### Changed
+
+- **Jira Domain File Modularization**: split monolithic 1800+ line `jira/api.rs` into 6 dedicated domain submodules: `issue.rs`, `comment.rs`, `transition.rs`, `worklog.rs`, `attachment.rs`, and `metadata.rs`.
+- **YAML Frontmatter Optimization**: standardized `SKILL.md` frontmatter with `description: >-` folded scalar for flawless multi-agent parser compatibility.
 
 Hardening & reliability release: memory layout optimization, network retry isolation, attachment path traversal protection, WireMock integration test suite, and full docs sanitization.
 
