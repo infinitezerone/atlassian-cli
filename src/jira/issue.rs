@@ -517,12 +517,22 @@ impl Jira {
         }))
     }
 
-    /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL，自动剥离 [~...] 装饰)
+    /// PUT /rest/api/2/issue/{key}/assignee (支持直接传入 Issue Key 或网页 URL，自动剥离 [~...] 装饰，支持 unassigned 取消指派)
     pub async fn assign_issue(&self, key_or_url: &str, assignee: &str) -> Result<Value, AppError> {
         let key = parse_jira_key(key_or_url);
         let clean_assignee = parse_username(assignee);
         let enc_key = urlencoding::encode(&key);
-        let body = json!({ "name": clean_assignee });
+
+        let (body, display_assignee) = if clean_assignee.is_empty()
+            || clean_assignee.eq_ignore_ascii_case("unassigned")
+            || clean_assignee.eq_ignore_ascii_case("none")
+            || clean_assignee == "-1"
+        {
+            (json!({ "name": "-1" }), "unassigned".to_string())
+        } else {
+            (json!({ "name": clean_assignee }), clean_assignee.clone())
+        };
+
         let path = format!("/rest/api/2/issue/{}/assignee", enc_key);
         if self.policy.dry_run {
             return Ok(crate::module::preview_json("jira.assign", "PUT", &path, &key, Some(&body), None));
@@ -536,7 +546,7 @@ impl Jira {
         Ok(json!({
             "status": "success",
             "key": key,
-            "assignee": clean_assignee,
+            "assignee": display_assignee,
             "link": format!("{}/browse/{}", self.http.base_url(), key),
         }))
     }

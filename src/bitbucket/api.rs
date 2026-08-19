@@ -17,12 +17,18 @@ impl Bitbucket {
         Self { http, policy }
     }
 
-    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests (支持自动加载网页预设 Reviewer 与手动扩展)
+    /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests (支持自动加载网页预设 Reviewer 与手动扩展，支持 --url 仓库链接)
     pub async fn create_pr(&self, a: &CreatePrArgs) -> Result<Value, AppError> {
+        let (project, repo) = parse_bitbucket_repo(
+            a.url.as_deref(),
+            a.project.as_deref(),
+            a.repo.as_deref(),
+        )?;
+
         let path = format!(
             "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
-            urlencoding::encode(&a.project),
-            urlencoding::encode(&a.repo)
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo)
         );
 
         let mut reviewer_names: Vec<String> = Vec::new();
@@ -32,8 +38,8 @@ impl Bitbucket {
         if !a.no_default_reviewers && !self.policy.dry_run {
             let cond_path = format!(
                 "/rest/default-reviewers/1.0/projects/{}/repos/{}/conditions",
-                urlencoding::encode(&a.project),
-                urlencoding::encode(&a.repo)
+                urlencoding::encode(&project),
+                urlencoding::encode(&repo)
             );
             if let Ok(cond_raw) = self.http.get(&cond_path).await {
                 if let Some(arr) = cond_raw.as_array() {
@@ -79,7 +85,7 @@ impl Bitbucket {
             "reviewers": reviewers_payload,
         });
 
-        let target = format!("{}/{}", a.project, a.repo);
+        let target = format!("{}/{}", project, repo);
         if self.policy.dry_run {
             let hint = if !a.no_default_reviewers {
                 Some("只读预览:网页预设 Reviewer 将在实际执行时自动加载。确认执行请追加 --confirm")
@@ -465,76 +471,76 @@ impl Bitbucket {
         }))
     }
 
-    /// GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests?state={state}&limit={limit}
+    /// 查询 Pull Requests (支持未指定仓库时的全局个人仪表盘模式与指定仓库时的单仓库模式)
+    ///
+    /// - 全局仪表盘模式: GET /rest/api/1.0/dashboard/pull-requests?state={state}&role={role}&limit={limit}
+    /// - 单仓库模式: GET /rest/api/1.0/projects/{p}/repos/{r}/pull-requests?state={state}&limit={limit}
     pub async fn list_prs(&self, a: &ListPrsArgs) -> Result<Value, AppError> {
-        let (project, repo) = parse_bitbucket_repo(
-            a.url.as_deref(),
-            a.project.as_deref(),
-            a.repo.as_deref(),
-        )?;
-
         let state_upper = a.state.to_uppercase();
         let limit_str = a.limit.to_string();
 
-        let path = format!(
-            "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
-            urlencoding::encode(&project),
-            urlencoding::encode(&repo)
-        );
+        let has_repo_target = a.url.is_some() || (a.project.is_some() && a.repo.is_some());
+        let has_partial_repo = (a.project.is_some() && a.repo.is_none()) || (a.project.is_none() && a.repo.is_some());
 
-        let raw = self
-            .http
-            .get_with_query(
-                &path,
-                &[("state", &state_upper), ("limit", &limit_str)],
-            )
-            .await?;
+        if has_partial_repo && a.url.is_none() {
+            return Err(AppError::param_invalid(
+                "若要按指定仓库过滤 PR，必须同时提供 --project 和 --repo（或传入 --url 仓库链接）；若要查全局个人 PR，请不要传任何仓库参数",
+            ));
+        }
 
-        let prs = raw["values"].as_array().map(|arr| {
-            arr.iter().map(|item| {
-                let id = item["id"].as_i64().unwrap_or(0);
-                let title = item["title"].as_str().unwrap_or("");
-                let state = item["state"].as_str().unwrap_or("");
-                let author_uname = item["author"]["user"]["name"].as_str().unwrap_or("");
-                let author_dname = item["author"]["user"]["displayName"].as_str().unwrap_or("");
-                let from_branch = item["fromRef"]["displayId"].as_str().unwrap_or("");
-                let to_branch = item["toRef"]["displayId"].as_str().unwrap_or("");
-                let created_date = item["createdDate"].as_i64().unwrap_or(0);
-                let updated_date = item["updatedDate"].as_i64().unwrap_or(0);
+        if has_repo_target {
+            let (project, repo) = parse_bitbucket_repo(
+                a.url.as_deref(),
+                a.project.as_deref(),
+                a.repo.as_deref(),
+            )?;
 
-                let web_url = format!(
-                    "{}/projects/{}/repos/{}/pull-requests/{}",
-                    self.http.base_url(),
-                    project,
-                    repo,
-                    id
-                );
+            let path = format!(
+                "/rest/api/1.0/projects/{}/repos/{}/pull-requests",
+                urlencoding::encode(&project),
+                urlencoding::encode(&repo)
+            );
 
-                json!({
-                    "id": id,
-                    "title": title,
-                    "state": state,
-                    "author": {
-                        "username": author_uname,
-                        "displayName": author_dname,
-                        "mention_syntax": format!("@{{{}}}", author_uname),
-                    },
-                    "from_branch": from_branch,
-                    "to_branch": to_branch,
-                    "created_date": created_date,
-                    "updated_date": updated_date,
-                    "url": web_url,
-                })
-            }).collect::<Vec<_>>()
-        }).unwrap_or_default();
+            let raw = self
+                .http
+                .get_with_query(
+                    &path,
+                    &[("state", &state_upper), ("limit", &limit_str)],
+                )
+                .await?;
 
-        Ok(json!({
-            "project": project,
-            "repo": repo,
-            "state": state_upper,
-            "count": prs.len(),
-            "pull_requests": prs,
-        }))
+            let prs = extract_prs_list(&raw, self.http.base_url(), Some((&project, &repo)));
+
+            Ok(json!({
+                "mode": "repository",
+                "project": project,
+                "repo": repo,
+                "state": state_upper,
+                "count": prs.len(),
+                "pull_requests": prs,
+            }))
+        } else {
+            let role_upper = a.role.to_uppercase();
+            let path = "/rest/api/1.0/dashboard/pull-requests";
+
+            let raw = self
+                .http
+                .get_with_query(
+                    path,
+                    &[("state", &state_upper), ("role", &role_upper), ("limit", &limit_str)],
+                )
+                .await?;
+
+            let prs = extract_prs_list(&raw, self.http.base_url(), None);
+
+            Ok(json!({
+                "mode": "dashboard",
+                "role": role_upper,
+                "state": state_upper,
+                "count": prs.len(),
+                "pull_requests": prs,
+            }))
+        }
     }
 
     /// POST /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/approve (支持直接传入网页 URL)
@@ -572,6 +578,63 @@ impl Bitbucket {
             "approved_status": raw["status"].as_str().unwrap_or("APPROVED"),
         }))
     }
+}
+
+/// 从 Bitbucket PR API 响应 (包含 values 数组) 提取规范化的 PR 列表
+fn extract_prs_list(raw: &Value, base_url: &str, default_repo: Option<(&str, &str)>) -> Vec<Value> {
+    raw["values"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|item| {
+                    let id = item["id"].as_i64().unwrap_or(0);
+                    let title = item["title"].as_str().unwrap_or("");
+                    let state = item["state"].as_str().unwrap_or("");
+                    let author_uname = item["author"]["user"]["name"].as_str().unwrap_or("");
+                    let author_dname = item["author"]["user"]["displayName"].as_str().unwrap_or("");
+                    let from_branch = item["fromRef"]["displayId"].as_str().unwrap_or("");
+                    let to_branch = item["toRef"]["displayId"].as_str().unwrap_or("");
+                    let created_date = item["createdDate"].as_i64().unwrap_or(0);
+                    let updated_date = item["updatedDate"].as_i64().unwrap_or(0);
+
+                    let p = default_repo
+                        .map(|(p, _)| p)
+                        .or_else(|| item["toRef"]["repository"]["project"]["key"].as_str())
+                        .or_else(|| item["fromRef"]["repository"]["project"]["key"].as_str())
+                        .unwrap_or("");
+                    let r = default_repo
+                        .map(|(_, r)| r)
+                        .or_else(|| item["toRef"]["repository"]["slug"].as_str())
+                        .or_else(|| item["fromRef"]["repository"]["slug"].as_str())
+                        .unwrap_or("");
+
+                    let web_url = if !p.is_empty() && !r.is_empty() {
+                        format!("{}/projects/{}/repos/{}/pull-requests/{}", base_url, p, r, id)
+                    } else {
+                        item["links"]["self"][0]["href"].as_str().unwrap_or("").to_string()
+                    };
+
+                    json!({
+                        "id": id,
+                        "title": title,
+                        "state": state,
+                        "project": p,
+                        "repo": r,
+                        "author": {
+                            "username": author_uname,
+                            "displayName": author_dname,
+                            "mention_syntax": format!("@{{{}}}", author_uname),
+                        },
+                        "from_branch": from_branch,
+                        "to_branch": to_branch,
+                        "created_date": created_date,
+                        "updated_date": updated_date,
+                        "url": web_url,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 /// 校验分支名是否符合 Bitbucket Default Reviewers 的 RefMatcher 条件规则

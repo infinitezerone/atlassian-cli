@@ -136,8 +136,13 @@ impl AssignArgs {
         self.user
             .as_deref()
             .or(self.assignee_pos.as_deref())
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| crate::error::AppError::param_invalid("缺少经办人用户名 (请通过位置参数或 --user / --assignee 传入)"))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                crate::error::AppError::param_invalid(
+                    "缺少经办人用户名 (请通过位置参数或 --user / --assignee 传入，取消指派可传 unassigned 或 -1)",
+                )
+            })
     }
 }
 
@@ -159,8 +164,10 @@ pub enum JiraActions {
     },
     /// 流转单子状态 (按状态名,如 In Progress / Done)
     Transition { key: String, status: String },
-    /// JQL 条件搜索单子 (如 "assignee = currentUser() AND status != Closed")
+    /// JQL 条件搜索单子 (默认查询当前用户未完成单子: "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC")
     Search {
+        /// JQL 检索表达式 (可选，缺省默认查询当前用户未完成单子)
+        #[arg(default_value = "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC")]
         jql: String,
         /// 最多返回条数 (默认 10)
         #[arg(long, default_value_t = 10)]

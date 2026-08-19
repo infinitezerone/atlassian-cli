@@ -9,6 +9,17 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-19
+
+Global PR Dashboard, universal repository URL support, natural language unassignment, and zero-argument personal task search.
+
+### Added
+
+- **Bitbucket Dual-Mode `list-prs`**: when `--project` / `--repo` / `--url` are omitted, `list-prs` automatically queries the user's global personal dashboard (`/rest/api/1.0/dashboard/pull-requests`), defaulting to open PRs created by the user (`role=AUTHOR`). Supports `--role reviewer` (pending reviews) and `--role participant`.
+- **Bitbucket `create-pr` URL Support**: `create-pr` now accepts direct browser repository URLs via `--url <URL>`, matching the ergonomics of other Bitbucket commands.
+- **Jira Natural Language Unassignment**: `jira assign` now recognizes `unassigned`, `none`, `-1`, and empty string, automatically mapping them to Jira's native unassigned payload `{"name": "-1"}`.
+- **Jira Zero-Argument Default Search**: `jira search` without JQL now defaults to querying the current user's unclosed issues (`"assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"`).
+
 ## [0.4.3] - 2026-08-19
 
 AI Agent skill discovery upgrade, standard Rust library & integration test architecture, and domain file modularization.

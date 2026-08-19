@@ -94,7 +94,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `confluence attach <ID/URL> <FILE>` | Upload a local file to a Confluence page |
 | | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
 | | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
-| **Bitbucket** | `bitbucket list-prs` | List PRs by repo/state (OPEN/MERGED/DECLINED/ALL; accepts repo URL) |
+| **Bitbucket** | `bitbucket list-prs` | List PRs (global user dashboard by default; or specify repo/state/role; accepts repo URL) |
 | | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
 | | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
 | | `bitbucket diff-pr <URL/ID>` | View PR code diff (`--stat` for file list overview, `--file <PATH>` for single file, `--max-lines`) |

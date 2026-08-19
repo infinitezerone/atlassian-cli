@@ -2,11 +2,11 @@ use clap::{Args, Subcommand};
 
 #[derive(Args)]
 pub struct ListPrsArgs {
-    /// Bitbucket Project 名 (若提供 --url 则可省略)
-    #[arg(long)]
+    /// Bitbucket Project 名 (若未指定且未提供 --url，则查询全局个人 PR 仪表盘)
+    #[arg(long, short = 'p', alias = "proj")]
     pub project: Option<String>,
-    /// Bitbucket Repo 名 (若提供 --url 则可省略)
-    #[arg(long)]
+    /// Bitbucket Repo 名 (若未指定且未提供 --url，则查询全局个人 PR 仪表盘)
+    #[arg(long, short = 'r', alias = "repository")]
     pub repo: Option<String>,
     /// 仓库网页 URL (例如 https://bitbucket.example.com/projects/PROJ/repos/my-repo)
     #[arg(long)]
@@ -14,6 +14,9 @@ pub struct ListPrsArgs {
     /// PR 状态 (默认 OPEN，可选 OPEN / MERGED / DECLINED / ALL)
     #[arg(long, default_value = "OPEN")]
     pub state: String,
+    /// 个人 PR 角色过滤 (在未指定仓库的全局仪表盘模式下生效，默认 AUTHOR，可选 AUTHOR / REVIEWER / PARTICIPANT)
+    #[arg(long, default_value = "AUTHOR")]
+    pub role: String,
     /// 最多返回条数 (默认 10)
     #[arg(long, default_value_t = 10)]
     pub limit: u32,
@@ -61,12 +64,15 @@ impl CommentPrArgs {
 
 #[derive(Args)]
 pub struct CreatePrArgs {
-    /// Bitbucket Project 名 (例如 PROJ)
+    /// Bitbucket Project 名 (例如 PROJ，若提供 --url 则可省略)
     #[arg(long, short = 'p', alias = "proj")]
-    pub project: String,
-    /// Bitbucket Repo 名 (例如 my-repo)
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (例如 my-repo，若提供 --url 则可省略)
     #[arg(long, short = 'r', alias = "repository")]
-    pub repo: String,
+    pub repo: Option<String>,
+    /// 仓库网页 URL (例如 https://bitbucket.example.com/projects/PROJ/repos/my-repo)
+    #[arg(long)]
+    pub url: Option<String>,
     /// PR 标题/概要 (Summary)
     #[arg(long, short = 't', alias = "summary", allow_hyphen_values = true)]
     pub title: String,

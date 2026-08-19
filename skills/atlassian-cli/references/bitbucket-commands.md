@@ -4,12 +4,18 @@ Load this file when a task requires any Bitbucket PR operation beyond the quick-
 
 ## List PRs & Create PR
 ```bash
-# List open PRs by project & repository (accepts repo URL)
+# 1. Global personal PR dashboard (no repo needed; defaults to author/OPEN)
+atlassian-cli bitbucket list-prs                          # list open PRs created by me across all repos
+atlassian-cli bitbucket list-prs --role reviewer          # list open PRs requesting my review
+atlassian-cli bitbucket list-prs --state MERGED           # list recently merged PRs
+
+# 2. List PRs by project & repository (accepts repo URL)
 atlassian-cli bitbucket list-prs --project PROJ --repo my-repo --state OPEN
 atlassian-cli bitbucket list-prs --url https://gitpub.example.com/projects/PROJ/repos/my-repo
 
-# Create Pull Request (auto-loads web default reviewers, supports extra --reviewers)
+# 3. Create Pull Request (accepts --url or --project/--repo, auto-loads web default reviewers, supports extra --reviewers)
 atlassian-cli bitbucket create-pr --project PROJ --repo my-repo --title "Fix login timeout" --from feature/login-fix --to main --reviewers "john.doe, jane.smith" --confirm
+atlassian-cli bitbucket create-pr --url https://gitpub.example.com/projects/PROJ/repos/my-repo --title "Fix login timeout" --from feature/login-fix --to main --confirm
 ```
 
 ## Inspect PR Details & Code Diffs (Token-Budget Friendly)

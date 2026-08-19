@@ -11,6 +11,10 @@ atlassian-cli jira get PROJ-123 --comments-limit 5
 
 ## Search Issues (JQL)
 ```bash
+# Default search: queries unclosed issues assigned to current user (zero-args!)
+atlassian-cli jira search
+
+# Custom JQL query
 atlassian-cli jira search "assignee = currentUser() AND status != Closed" --limit 10
 # Restrict returned fields to save tokens (comma-separated, '-' excludes)
 atlassian-cli jira search "project = PROJ" --fields summary,status,assignee
@@ -73,6 +77,9 @@ atlassian-cli jira user "john"
 
 # Assign issue (auto-sanitizes [~username] or @{username} input)
 atlassian-cli jira assign PROJ-123 john.doe --confirm
+
+# Unassign issue (supports unassigned, none, or -1)
+atlassian-cli jira assign PROJ-123 unassigned --confirm
 ```
 
 ## Mentions (@) — Always resolve before writing
