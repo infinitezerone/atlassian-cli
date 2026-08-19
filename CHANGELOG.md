@@ -9,6 +9,23 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-19
+
+Hardening & reliability release: memory layout optimization, network retry isolation, attachment path traversal protection, WireMock integration test suite, and full docs sanitization.
+
+### Added
+
+- **WireMock Integration Test Suite**: added 9 offline HTTP mock integration tests across `http`, `jira`, `confluence`, and `bitbucket` modules, expanding test suite to 64 automated tests with zero live server dependency.
+- **Strict Network Write Isolation**: mutated requests (`POST`, `PUT`, `DELETE`) now use `raw_client` to bypass blind middleware retries, preventing duplicate ticket creation and comments on network drops.
+- **Path Traversal Protection**: sanitized downloaded attachment filenames using `Path::file_name()` in both Jira and Confluence attachment endpoints.
+- **Audit File Security**: enforced `0600` read/write permissions on Unix for `audit.jsonl`.
+- **UTF-8 Char Boundary Safety**: added `is_char_boundary` safety checks before string slicing in prompt injection redactions.
+
+### Changed
+
+- **`AppError` Memory Optimization**: boxed inner error fields into `Box<AppErrorInner>`, reducing struct size from >136 bytes to 16 bytes and optimizing stack memory overhead.
+- **Docs & Examples Sanitization**: standardized all CLI documentation, examples, and help messages with clean generic placeholders.
+
 ## [0.4.1] - 2026-08-18
 
 WorkBuddy & CodeBuddy ecosystem integration and non-intrusive skill deployment.
