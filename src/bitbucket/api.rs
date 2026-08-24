@@ -1,6 +1,9 @@
 use serde_json::{json, Value};
 
-use super::cli::{CommentPrArgs, CreatePrArgs, DiffPrArgs, GetPrArgs, ListPrsArgs};
+use super::cli::{
+    CommentDeletePrArgs, CommentPrArgs, CommentUpdatePrArgs, CreatePrArgs, DiffPrArgs, GetPrArgs,
+    ListPrsArgs, UpdatePrArgs,
+};
 use crate::error::AppError;
 use crate::http::HttpClient;
 use crate::module::WritePolicy;
@@ -134,6 +137,150 @@ impl Bitbucket {
             "reviewers_count": res_reviewers.len(),
             "reviewers": res_reviewers,
             "link": raw["links"]["self"][0]["href"],
+        }))
+    }
+
+    /// PUT /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id} (修改 PR 标题、描述或评审人)
+    pub async fn update_pr(&self, a: &UpdatePrArgs) -> Result<Value, AppError> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+
+        if a.title.is_none() && a.description.is_none() && a.reviewers.is_none() && a.version.is_none() {
+            return Err(AppError::param_invalid(
+                "未提供任何需要更新的字段 (请至少指定 --title、--description 或 --reviewers)",
+            ));
+        }
+
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id)
+        );
+
+        // 1. 如果是非 dry-run 或需要自动合并现有字段，查询当前 PR 详情
+        let (version, title, description, reviewers_payload) = if self.policy.dry_run {
+            let ver = a.version.unwrap_or(0);
+            let t = a.title.clone().unwrap_or_else(|| "<保留原有标题>".to_string());
+            let d = a.description.clone().unwrap_or_else(|| "<保留原有描述>".to_string());
+            let revs: Vec<Value> = if let Some(ref r_str) = a.reviewers {
+                r_str
+                    .split(',')
+                    .map(|s| crate::utils::parse_username(s))
+                    .filter(|s| !s.is_empty())
+                    .map(|name| json!({ "user": { "name": name } }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (ver, t, d, revs)
+        } else {
+            let current = self.http.get(&path).await?;
+            let ver = match a.version {
+                Some(v) => v,
+                None => current["version"]
+                    .as_u64()
+                    .ok_or_else(|| AppError::http_error("无法获取当前 PR 的 version 版本号"))?,
+            };
+            let t = a
+                .title
+                .clone()
+                .or_else(|| current["title"].as_str().map(|s| s.to_string()))
+                .unwrap_or_default();
+            let d = a
+                .description
+                .clone()
+                .or_else(|| current["description"].as_str().map(|s| s.to_string()))
+                .unwrap_or_default();
+
+            let revs: Vec<Value> = if let Some(ref r_str) = a.reviewers {
+                let mut names: Vec<String> = Vec::new();
+                for item in r_str.split(',') {
+                    let clean = crate::utils::parse_username(item);
+                    if !clean.is_empty() && !names.contains(&clean) {
+                        names.push(clean);
+                    }
+                }
+                names
+                    .iter()
+                    .map(|name| json!({ "user": { "name": name } }))
+                    .collect()
+            } else if let Some(curr_revs) = current["reviewers"].as_array() {
+                curr_revs.clone()
+            } else {
+                Vec::new()
+            };
+
+            (ver, t, d, revs)
+        };
+
+        let mut body = json!({
+            "version": version,
+            "title": title,
+            "description": description,
+        });
+        if !reviewers_payload.is_empty() {
+            body["reviewers"] = Value::Array(reviewers_payload);
+        }
+
+        let target = format!("{}/{}/PR-{}", project, repo, pr_id);
+        if self.policy.dry_run {
+            let hint = if a.version.is_none() {
+                Some("只读预览:实际执行时将自动查询并合并当前 PR 原有字段与版本号。确认执行请追加 --confirm")
+            } else {
+                None
+            };
+            return Ok(crate::module::preview_json(
+                "bitbucket.update-pr",
+                "PUT",
+                &path,
+                &target,
+                Some(&body),
+                hint,
+            ));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
+        let raw = self.http.put(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+
+        let res_reviewers = raw["reviewers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| {
+                        let uname = r["user"]["name"].as_str().unwrap_or("");
+                        let dname = r["user"]["displayName"].as_str().unwrap_or("");
+                        json!({
+                            "username": uname,
+                            "displayName": dname,
+                            "mention_syntax": format!("@{{{}}}", uname),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let link = raw["links"]["self"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj["href"].as_str())
+            .unwrap_or("")
+            .to_string();
+
+        Ok(json!({
+            "status": "success",
+            "pr_id": raw["id"],
+            "version": raw["version"],
+            "title": raw["title"],
+            "description": raw["description"],
+            "state": raw["state"],
+            "project": project,
+            "repo": repo,
+            "reviewers_count": res_reviewers.len(),
+            "reviewers": res_reviewers,
+            "link": link,
         }))
     }
 
@@ -347,6 +494,7 @@ impl Bitbucket {
                         let anchor = &act["commentAnchor"];
                         json!({
                             "id": c["id"],
+                            "version": c["version"],
                             "author": c["author"]["displayName"],
                             "text": c["text"],
                             "created": c["createdDate"],
@@ -415,12 +563,141 @@ impl Bitbucket {
         Ok(json!({
             "status": "success",
             "comment_id": raw["id"],
+            "version": raw["version"],
             "pr_id": pr_id,
             "project": project,
             "repo": repo,
             "author": raw["author"]["displayName"],
             "text": raw["text"],
             "anchor": anchor_info,
+        }))
+    }
+
+    /// 辅助方法: 获取单条评论的当前最新 version 版本号 (用于乐观锁)
+    pub async fn get_pr_comment_version(
+        &self,
+        project: &str,
+        repo: &str,
+        pr_id: &str,
+        comment_id: u64,
+    ) -> Result<u64, AppError> {
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/comments/{}",
+            urlencoding::encode(project),
+            urlencoding::encode(repo),
+            urlencoding::encode(pr_id),
+            comment_id
+        );
+        let raw = self.http.get(&path).await?;
+        raw["version"]
+            .as_u64()
+            .ok_or_else(|| AppError::http_error("无法从 Bitbucket 获取评论版本号 (version 缺失)"))
+    }
+
+    /// PUT /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments/{commentId}
+    pub async fn update_pr_comment(&self, a: &CommentUpdatePrArgs) -> Result<Value, AppError> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+        let comment_text = a.get_text()?;
+
+        let version = match a.version {
+            Some(v) => v,
+            None => {
+                if self.policy.dry_run {
+                    0
+                } else {
+                    self.get_pr_comment_version(&project, &repo, &pr_id, a.comment_id).await?
+                }
+            }
+        };
+
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/comments/{}",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id),
+            a.comment_id
+        );
+
+        let body = json!({
+            "version": version,
+            "text": comment_text,
+        });
+
+        let target = format!("{}/{}/PR-{}/comment-{}", project, repo, pr_id, a.comment_id);
+        if self.policy.dry_run {
+            let hint = if a.version.is_none() {
+                Some("只读预览:实际执行时将自动查询最新评论版本号 (version)。确认执行请追加 --confirm")
+            } else {
+                None
+            };
+            return Ok(crate::module::preview_json("bitbucket.comment-update", "PUT", &path, &target, Some(&body), hint));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
+        let raw = self.http.put(&path, body).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+
+        Ok(json!({
+            "status": "success",
+            "comment_id": raw["id"],
+            "version": raw["version"],
+            "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
+            "author": raw["author"]["displayName"],
+            "text": raw["text"],
+        }))
+    }
+
+    /// DELETE /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}/comments/{commentId}?version={version}
+    pub async fn delete_pr_comment(&self, a: &CommentDeletePrArgs) -> Result<Value, AppError> {
+        let (project, repo, pr_id) = parse_bitbucket_pr(&a.id_or_url, a.project.as_deref(), a.repo.as_deref())?;
+
+        let version = match a.version {
+            Some(v) => v,
+            None => {
+                if self.policy.dry_run {
+                    0
+                } else {
+                    self.get_pr_comment_version(&project, &repo, &pr_id, a.comment_id).await?
+                }
+            }
+        };
+
+        let path = format!(
+            "/rest/api/1.0/projects/{}/repos/{}/pull-requests/{}/comments/{}?version={}",
+            urlencoding::encode(&project),
+            urlencoding::encode(&repo),
+            urlencoding::encode(&pr_id),
+            a.comment_id,
+            version
+        );
+
+        let target = format!("{}/{}/PR-{}/comment-{}", project, repo, pr_id, a.comment_id);
+        if self.policy.dry_run {
+            let hint = if a.version.is_none() {
+                Some("只读预览:实际执行时将自动查询最新评论版本号 (version)。确认执行请追加 --confirm")
+            } else {
+                None
+            };
+            return Ok(crate::module::preview_json("bitbucket.comment-delete", "DELETE", &path, &target, None, hint));
+        }
+        crate::module::require_confirmed(&self.policy)?;
+
+        let raw = self.http.delete(&path).await?;
+        if crate::module::is_replayed(&raw) {
+            return Ok(raw);
+        }
+
+        Ok(json!({
+            "status": "success",
+            "comment_id": a.comment_id,
+            "pr_id": pr_id,
+            "project": project,
+            "repo": repo,
+            "message": format!("PR #{} 评论 #{} 已成功删除", pr_id, a.comment_id),
         }))
     }
 

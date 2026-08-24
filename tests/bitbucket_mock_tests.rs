@@ -284,4 +284,179 @@ async fn test_mock_bitbucket_create_pr_with_url() {
     assert_eq!(res["reviewers"][0]["username"], "lead.dev");
 }
 
+#[tokio::test]
+async fn test_mock_bitbucket_update_pr_comment() {
+    use atlassian_cli::bitbucket::CommentUpdatePrArgs;
+
+    let mock_server = MockServer::start().await;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let comment_id = (nanos % 1000000) as u64;
+    let text = format!("Updated comment text {}", nanos);
+
+    // 1. Mock GET comment (for automatic version resolution)
+    Mock::given(method("GET"))
+        .and(path(format!("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42/comments/{}", comment_id)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": comment_id,
+            "version": 3,
+            "text": "Old text",
+            "author": { "displayName": "Reviewer" }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // 2. Mock PUT comment
+    Mock::given(method("PUT"))
+        .and(path(format!("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42/comments/{}", comment_id)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": comment_id,
+            "version": 4,
+            "text": text,
+            "author": { "displayName": "Reviewer" }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+    let bitbucket = Bitbucket::new(http, WritePolicy { dry_run: false, confirm: true });
+
+    let args = CommentUpdatePrArgs {
+        project: None,
+        repo: None,
+        id_or_url: "https://gitpub.example.com/projects/PROJ/repos/app/pull-requests/42".to_string(),
+        comment_id,
+        body_pos: None,
+        body: Some(text.clone()),
+        version: None, // Test auto-version detection!
+    };
+
+    let res = bitbucket.update_pr_comment(&args).await.unwrap();
+    assert_eq!(res["status"], "success");
+    assert_eq!(res["comment_id"], comment_id);
+    assert_eq!(res["version"], 4);
+    assert_eq!(res["text"], text);
+}
+
+#[tokio::test]
+async fn test_mock_bitbucket_delete_pr_comment() {
+    use atlassian_cli::bitbucket::CommentDeletePrArgs;
+    use wiremock::matchers::query_param;
+
+    let mock_server = MockServer::start().await;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let comment_id = (nanos % 1000000) as u64;
+
+    // 1. Mock GET comment (for automatic version resolution)
+    Mock::given(method("GET"))
+        .and(path(format!("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42/comments/{}", comment_id)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": comment_id,
+            "version": 1,
+            "text": "Comment to delete",
+            "author": { "displayName": "Reviewer" }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // 2. Mock DELETE comment
+    Mock::given(method("DELETE"))
+        .and(path(format!("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42/comments/{}", comment_id)))
+        .and(query_param("version", "1"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&mock_server)
+        .await;
+
+    let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+    let bitbucket = Bitbucket::new(http, WritePolicy { dry_run: false, confirm: true });
+
+    let args = CommentDeletePrArgs {
+        project: Some("PROJ".to_string()),
+        repo: Some("app".to_string()),
+        id_or_url: "42".to_string(),
+        comment_id,
+        version: None, // Test auto-version detection!
+    };
+
+    let res = bitbucket.delete_pr_comment(&args).await.unwrap();
+    assert_eq!(res["status"], "success");
+    assert_eq!(res["comment_id"], comment_id);
+    assert_eq!(res["pr_id"], "42");
+}
+
+#[tokio::test]
+async fn test_mock_bitbucket_update_pr() {
+    use atlassian_cli::bitbucket::UpdatePrArgs;
+
+    let mock_server = MockServer::start().await;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let new_title = format!("Updated PR Title {}", nanos);
+    let new_desc = format!("Updated PR Description {}", nanos);
+
+    // 1. Mock GET PR (for automatic version and existing fields resolution)
+    Mock::given(method("GET"))
+        .and(path("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": 42,
+            "version": 5,
+            "title": "Old PR Title",
+            "description": "Old PR Description",
+            "reviewers": [
+                { "user": { "name": "existing.reviewer", "displayName": "Existing Reviewer" } }
+            ]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // 2. Mock PUT PR
+    Mock::given(method("PUT"))
+        .and(path("/rest/api/1.0/projects/PROJ/repos/app/pull-requests/42"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": 42,
+            "version": 6,
+            "title": new_title,
+            "description": new_desc,
+            "state": "OPEN",
+            "reviewers": [
+                { "user": { "name": "existing.reviewer", "displayName": "Existing Reviewer" } }
+            ],
+            "links": {
+                "self": [{ "href": "http://127.0.0.1/projects/PROJ/repos/app/pull-requests/42" }]
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+    let bitbucket = Bitbucket::new(http, WritePolicy { dry_run: false, confirm: true });
+
+    let args = UpdatePrArgs {
+        project: None,
+        repo: None,
+        id_or_url: "https://gitpub.example.com/projects/PROJ/repos/app/pull-requests/42".to_string(),
+        title: Some(new_title.clone()),
+        description: Some(new_desc.clone()),
+        version: None, // Auto fetch version 5!
+        reviewers: None, // Preserve existing reviewers!
+    };
+
+    let res = bitbucket.update_pr(&args).await.unwrap();
+    assert_eq!(res["status"], "success");
+    assert_eq!(res["pr_id"], 42);
+    assert_eq!(res["version"], 6);
+    assert_eq!(res["title"], new_title);
+    assert_eq!(res["description"], new_desc);
+    assert_eq!(res["reviewers_count"], 1);
+}
+
+
+
 

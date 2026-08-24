@@ -36,6 +36,8 @@ metadata:
 | "安全查找替换文档内容" | `confluence update` | `atlassian-cli confluence update 123456 --find "老文本" --replace "新文本" --confirm` |
 | "看下这个 PR 改了什么" | `bitbucket diff-pr` | `atlassian-cli bitbucket diff-pr 100 --stat` (先查文件清单) |
 | "发表行级代码评审意见" | `bitbucket comment-pr` | `atlassian-cli bitbucket comment-pr 100 "建议重构" --file src/lib.rs --line 42 --confirm` |
+| "修改/删除 PR 评论" | `bitbucket comment-update-pr` / `comment-delete-pr` | `atlassian-cli bitbucket comment-update-pr 100 1001 "新文本" --confirm` |
+| "修改 PR 标题/描述/评审人" | `bitbucket update-pr` | `atlassian-cli bitbucket update-pr 100 --title "新标题" --confirm` |
 | "点赞 / 通过 PR" | `bitbucket approve-pr` | `atlassian-cli bitbucket approve-pr 100 --confirm` |
 
 ---

@@ -33,10 +33,13 @@ impl AtlassianModule for Bitbucket {
         match action {
             BitbucketActions::ListPrs(a) => self.list_prs(&a).await,
             BitbucketActions::CreatePr(a) => self.create_pr(&a).await,
+            BitbucketActions::UpdatePr(a) => self.update_pr(&a).await,
             BitbucketActions::GetPr(a) => self.get_pr(&a).await,
             BitbucketActions::DiffPr(a) => self.get_pr_diff(&a).await,
             BitbucketActions::CommentsPr(a) => self.get_pr_comments(&a).await,
             BitbucketActions::CommentPr(a) => self.add_pr_comment(&a).await,
+            BitbucketActions::CommentUpdatePr(a) => self.update_pr_comment(&a).await,
+            BitbucketActions::CommentDeletePr(a) => self.delete_pr_comment(&a).await,
             BitbucketActions::ApprovePr(a) => self.approve_pr(&a).await,
             BitbucketActions::User { query, limit } => self.search_users(&query, limit).await,
         }

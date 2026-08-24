@@ -9,6 +9,17 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-24
+
+Bitbucket PR metadata update (`update-pr`), PR comment editing (`comment-update-pr`), and PR comment deletion (`comment-delete-pr`).
+
+### Added
+
+- **Bitbucket PR Metadata Update (`update-pr`)**: update PR title, description, and reviewers with automatic field merging (unspecified fields retain their existing server values) and optimistic lock `version` resolution (`PUT /rest/api/1.0/projects/{p}/repos/{r}/pull-requests/{id}`). Alias `edit-pr`.
+- **Bitbucket PR Comment Editing (`comment-update-pr`)**: edit PR comments with automatic `version` optimistic lock detection (`PUT /rest/api/1.0/.../comments/{id}`). Alias `comment-update`.
+- **Bitbucket PR Comment Deletion (`comment-delete-pr`)**: delete PR comments with automatic `version` resolution (`DELETE /rest/api/1.0/.../comments/{id}?version={version}`). Alias `comment-delete`.
+- **Comment Version Exposure**: `bitbucket comments-pr` now returns the `version` field for every comment item.
+
 ## [0.5.0] - 2026-08-19
 
 Global PR Dashboard, universal repository URL support, natural language unassignment, and zero-argument personal task search.

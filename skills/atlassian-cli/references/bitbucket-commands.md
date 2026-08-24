@@ -16,6 +16,11 @@ atlassian-cli bitbucket list-prs --url https://gitpub.example.com/projects/PROJ/
 # 3. Create Pull Request (accepts --url or --project/--repo, auto-loads web default reviewers, supports extra --reviewers)
 atlassian-cli bitbucket create-pr --project PROJ --repo my-repo --title "Fix login timeout" --from feature/login-fix --to main --reviewers "john.doe, jane.smith" --confirm
 atlassian-cli bitbucket create-pr --url https://gitpub.example.com/projects/PROJ/repos/my-repo --title "Fix login timeout" --from feature/login-fix --to main --confirm
+
+# 4. Update PR Metadata (Title, Description, or Reviewers; auto-fetches version and merges existing fields)
+atlassian-cli bitbucket update-pr 100 --title "Updated PR Title" --confirm
+atlassian-cli bitbucket update-pr 100 --description "Revised description with testing steps" --confirm
+atlassian-cli bitbucket update-pr https://gitpub.../pull-requests/100 --title "New Title" --description "New Desc" --reviewers "john.doe, jane.smith" --confirm
 ```
 
 ## Inspect PR Details & Code Diffs (Token-Budget Friendly)
@@ -49,4 +54,18 @@ atlassian-cli bitbucket comment-pr 100 \
 
 # Approve Pull Request
 atlassian-cli bitbucket approve-pr 100 --confirm
+```
+
+## Update & Delete PR Comments
+```bash
+# First check comment ID using comments-pr (returns comments[].id and comments[].version):
+atlassian-cli bitbucket comments-pr 100
+
+# Update PR comment (auto-fetches latest version for optimistic lock if --version is omitted)
+atlassian-cli bitbucket comment-update-pr 100 10001 --text "Revised review feedback" --confirm
+atlassian-cli bitbucket comment-update-pr https://gitpub.../pull-requests/100 10001 "Revised feedback" --confirm
+
+# Delete PR comment (auto-fetches latest version if --version is omitted)
+atlassian-cli bitbucket comment-delete-pr 100 10001 --confirm
+atlassian-cli bitbucket comment-delete-pr https://gitpub.../pull-requests/100 10001 --confirm
 ```

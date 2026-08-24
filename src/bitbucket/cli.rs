@@ -129,6 +129,84 @@ pub struct DiffPrArgs {
     pub offset: usize,
 }
 
+#[derive(Args)]
+pub struct CommentUpdatePrArgs {
+    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'p', alias = "proj")]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'r', alias = "repository")]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
+    pub id_or_url: String,
+    /// 评论 ID (通过 bitbucket comments-pr 获取)
+    pub comment_id: u64,
+    /// 修改后的评论文本内容 (位置参数)
+    #[arg(value_name = "BODY", allow_hyphen_values = true)]
+    pub body_pos: Option<String>,
+    /// 修改后的评论文本内容 (命名参数，别名 --body, -b, --text, --comment)
+    #[arg(long, short = 'b', alias = "text", alias = "comment", allow_hyphen_values = true)]
+    pub body: Option<String>,
+    /// 评论版本号 (可选，若不传则自动通过 API 查询当前最新版本号)
+    #[arg(long, short = 'v', alias = "ver")]
+    pub version: Option<u64>,
+}
+
+impl CommentUpdatePrArgs {
+    pub fn get_text(&self) -> Result<&str, crate::error::AppError> {
+        self.body
+            .as_deref()
+            .or(self.body_pos.as_deref())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                crate::error::AppError::param_invalid(
+                    "缺少修改后的 PR 评论正文内容 (请通过位置参数或 --body / --text 传入)",
+                )
+            })
+    }
+}
+
+#[derive(Args)]
+pub struct CommentDeletePrArgs {
+    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'p', alias = "proj")]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'r', alias = "repository")]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
+    pub id_or_url: String,
+    /// 评论 ID (通过 bitbucket comments-pr 获取)
+    pub comment_id: u64,
+    /// 评论版本号 (可选，若不传则自动通过 API 查询当前最新版本号)
+    #[arg(long, short = 'v', alias = "ver")]
+    pub version: Option<u64>,
+}
+
+#[derive(Args)]
+pub struct UpdatePrArgs {
+    /// Bitbucket Project 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'p', alias = "proj")]
+    pub project: Option<String>,
+    /// Bitbucket Repo 名 (若传入完整 PR 网页 URL 则自动从 URL 解析)
+    #[arg(long, short = 'r', alias = "repository")]
+    pub repo: Option<String>,
+    /// PR ID 或完整 PR 网页 URL (例如 2420 或网页链接)
+    pub id_or_url: String,
+    /// 修改后的 PR 标题 (可选)
+    #[arg(long, short = 't', alias = "summary", allow_hyphen_values = true)]
+    pub title: Option<String>,
+    /// 修改后的 PR 详细描述 (可选)
+    #[arg(long, short = 'd', alias = "desc", alias = "body", allow_hyphen_values = true)]
+    pub description: Option<String>,
+    /// PR 乐观锁版本号 (可选，若不传则自动通过 API 查询当前最新版本号)
+    #[arg(long, short = 'v', alias = "ver")]
+    pub version: Option<u64>,
+    /// 修改后的 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @{john.doe})
+    #[arg(long, alias = "reviewer")]
+    pub reviewers: Option<String>,
+}
+
 /// Bitbucket 模块的 CLI 子命令
 #[derive(Subcommand)]
 pub enum BitbucketActions {
@@ -136,6 +214,9 @@ pub enum BitbucketActions {
     ListPrs(ListPrsArgs),
     /// 创建 Pull Request
     CreatePr(CreatePrArgs),
+    /// 更新已有 PR 的标题、描述或评审人 (支持直接传入网页 URL)
+    #[command(alias = "edit-pr")]
+    UpdatePr(UpdatePrArgs),
     /// 获取 PR 详情 (支持直接传入网页 URL)
     GetPr(GetPrArgs),
     /// 查看 PR 代码修改差异与变动文件 (支持 --stat 概览、--file 单文件查看与 --max-lines 截断)
@@ -144,6 +225,12 @@ pub enum BitbucketActions {
     CommentsPr(GetPrArgs),
     /// 在 PR 上发表评论 (支持直接传入网页 URL)
     CommentPr(CommentPrArgs),
+    /// 修改 PR 上的已有评论 (需先通过 bitbucket comments-pr 获取 comment_id，支持直接传入网页 URL)
+    #[command(alias = "comment-update")]
+    CommentUpdatePr(CommentUpdatePrArgs),
+    /// 删除 PR 上的已有评论 (需先通过 bitbucket comments-pr 获取 comment_id，支持直接传入网页 URL)
+    #[command(alias = "comment-delete")]
+    CommentDeletePr(CommentDeletePrArgs),
     /// 批准/同意 PR (Approve Pull Request，支持直接传入网页 URL)
     ApprovePr(GetPrArgs),
     /// 按姓名或邮箱模糊搜索同事 (返回 displayName, email 与防误触 @ 语法 mention_syntax)
