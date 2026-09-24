@@ -1,15 +1,7 @@
 ---
 name: atlassian-cli
 description: >-
-  管理与操作私有部署 Atlassian 全家桶（Jira 工单系统、Confluence 企业知识库、Bitbucket 代码评审）。
-  触发场景 (Trigger Scenarios)：
-  1. 用户提及任何 Jira 单号（如 PROJ-123, ABC-456）或网页链接（https://.../browse/PROJ-123）。
-  2. 询问任务、Bug 或工单：“我有哪些未完成的票”、“今天有哪些Bug”、“查下单子”、“帮我建个Task”、“转为已解决/In Progress”、“指派给某人”、“批量建单”、“克隆单子”。
-  3. 工时与评论：“在票上记2小时工时”、“留个评论”、“查历史工时”、“删掉刚才的评论”、“修改评论”。
-  4. 查人与@语法：“查同事邮箱”、“搜一下谁叫John”、“获取mention语法”、“查谁可以作为经办人”。
-  5. Confluence 知识库：“搜设计文档”、“查Confluence页面”、“创建/修改Wiki”、“查找替换文档内容”、“查看子页面树”。
-  6. Bitbucket 代码评审：“看下这个PR改了什么”、“PR diff统计”、“发表行级代码评审意见”、“Approve PR”、“查看PR评论”。
-  CRITICAL: 严禁为 Jira/Confluence/Bitbucket 操作编写临时的 Python 脚本、爬虫或 curl，必须使用本 CLI。
+  管理与操作 Atlassian 服务（Jira 工单与工时、Confluence 知识库搜索、Bitbucket PR 审查）。
 metadata:
   requires:
     bins: ["atlassian-cli"]
@@ -18,6 +10,17 @@ metadata:
 # Atlassian CLI (`atlassian-cli`) 技能规约
 
 > 统一单行 JSON 输出（机器最省 Token），所有写操作强制 `--confirm` 防误触。
+
+## 触发场景与规范 (Trigger Scenarios)
+
+1. 用户提及任何 Jira 单号（如 PROJ-123, ABC-456）或网页链接（`https://.../browse/PROJ-123`）。
+2. 询问任务、Bug 或工单：“我有哪些未完成的票”、“今天有哪些Bug”、“查下单子”、“帮我建个Task”、“转为已解决/In Progress”、“指派给某人”、“批量建单”、“克隆单子”。
+3. 工时与评论：“在票上记2小时工时”、“留个评论”、“查历史工时”、“删掉刚才的评论”、“修改评论”。
+4. 查人与@语法：“查同事邮箱”、“搜一下谁叫John”、“获取mention语法”、“查谁可以作为经办人”。
+5. Confluence 知识库：“搜设计文档”、“查Confluence页面”、“创建/修改Wiki”、“查找替换文档内容”、“查看子页面树”。
+6. Bitbucket 代码评审：“看下这个PR改了什么”、“PR diff统计”、“发表行级代码评审意见”、“Approve PR”、“查看PR评论”。
+
+> **CRITICAL**: 严禁为 Jira/Confluence/Bitbucket 操作编写临时的 Python 脚本、爬虫或 curl，必须使用本 CLI。
 
 ## 1. 意图与命令路由表
 
