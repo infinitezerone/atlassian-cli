@@ -42,9 +42,22 @@ impl AtlassianModule for Confluence {
                 id,
                 title_only,
                 raw,
+                section,
+                table,
                 max_chars,
                 offset,
-            } => self.get_page(&id, title_only, raw, max_chars, offset).await,
+            } => {
+                self.get_page(
+                    &id,
+                    title_only,
+                    raw,
+                    section.as_deref(),
+                    table.as_deref(),
+                    max_chars,
+                    offset,
+                )
+                .await
+            }
             ConfluenceActions::Children { id, limit } => self.get_children(&id, limit).await,
             ConfluenceActions::Spaces { query, limit } => self.list_spaces(query.as_deref(), limit).await,
             ConfluenceActions::Attachments { id, limit } => self.list_attachments(&id, limit).await,

@@ -34,11 +34,18 @@ atlassian-cli confluence attach 12345678 ./spec.pdf --comment "Updated architect
 
 ## Fetch Page Body
 ```bash
-# Fetch page text (default 8000 chars, accepts Page ID or browser URL)
+# Fetch page text in Markdown (default 32000 chars, accepts Page ID or browser URL)
 atlassian-cli confluence get 12345678
 
+# Selective extraction: fetch only a specific section or heading
+atlassian-cli confluence get 12345678 --section "Comments"
+
+# Selective extraction: fetch only a specific table (by anchor text or 1-based index)
+atlassian-cli confluence get 12345678 --table "Release Checklist"
+atlassian-cli confluence get 12345678 --table 1
+
 # Paginate long documents using --offset
-atlassian-cli confluence get 12345678 --offset 8000 --max-chars 8000
+atlassian-cli confluence get 12345678 --offset 32000 --max-chars 32000
 
 # Fetch raw HTML storage format
 atlassian-cli confluence get 12345678 --raw
@@ -49,6 +56,14 @@ atlassian-cli confluence get 12345678 --raw
 # Create page (supports Date <time> pills & Jira issue cards)
 atlassian-cli confluence create --space PROJ --title "Release Notes 6.2.0" \
   --body "Release date: <time datetime=\"2026-08-13\"/>\nRelated ticket: <ac:structured-macro ac:name=\"jira\"><ac:parameter ac:name=\"key\">PROJ-123</ac:parameter></ac:structured-macro>"
+
+# Update page: atomic table cell modification (locates unique row, modifies target column)
+atlassian-cli confluence update 12345678 --set-cell "TASK-123" "Status" "Done" --confirm
+# Supports macro shorthands in cell values ([Status: ...], [~username], [Date: YYYY-MM-DD])
+atlassian-cli confluence update 12345678 --set-cell "DB-Migration" 3 "[Status: Complete]" --confirm
+
+# Update page: append a new row to an existing table
+atlassian-cli confluence update 12345678 --append-row "Sprint 42" "PROJ-456" "In Progress" "[~alice]" --confirm
 
 # Update page: find & replace (strictly requires exact 1 occurrence to avoid corrupting text)
 atlassian-cli confluence update 12345678 --find "v6.1.0" --replace "v6.2.0" --confirm

@@ -30,7 +30,7 @@ async fn test_mock_confluence_get_page_truncation() {
     let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
     let confluence = Confluence::new(http, WritePolicy { dry_run: false, confirm: true });
 
-    let res = confluence.get_page("123456", false, false, 20, 0).await.unwrap();
+    let res = confluence.get_page("123456", false, false, None, None, 20, 0).await.unwrap();
     assert_eq!(res["id"], "123456");
     assert_eq!(res["title"], "Architecture Guide");
     assert_eq!(res["returned_chars"], 20);
@@ -86,6 +86,8 @@ async fn test_mock_confluence_update_page_safe_find_replace() {
         replace: Some("1.0.1 (New Release)".to_string()),
         append: None,
         prepend: None,
+        set_cell: None,
+        append_row: None,
     };
 
     let res = confluence.update_page(&args).await.unwrap();
@@ -93,4 +95,69 @@ async fn test_mock_confluence_update_page_safe_find_replace() {
     assert_eq!(res["status"], "success");
     assert_eq!(res["version"], 2);
     assert_eq!(res["id"], page_id);
+}
+
+#[tokio::test]
+async fn test_mock_confluence_update_page_set_cell() {
+    let mock_server = MockServer::start().await;
+    let page_id = "998877";
+    let content_path = format!("/rest/api/content/{}", page_id);
+
+    let initial_storage = r#"<table>
+  <tr><th>模块</th><th>状态</th></tr>
+  <tr><td>支付网关</td><td><ac:structured-macro ac:name="status"><ac:parameter ac:name="title">TODO</ac:parameter></ac:structured-macro></td></tr>
+</table>"#;
+
+    // 1. 获取原页面
+    Mock::given(method("GET"))
+        .and(path(content_path.clone()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": page_id,
+            "title": "Roadmap",
+            "version": { "number": 1 },
+            "body": {
+                "storage": {
+                    "value": initial_storage
+                }
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // 2. PUT 提交更新
+    Mock::given(method("PUT"))
+        .and(path(content_path))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": page_id,
+            "title": "Roadmap",
+            "version": { "number": 2 }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let http = HttpClient::new(mock_server.uri(), "token", false).unwrap();
+    let confluence = Confluence::new(http, WritePolicy { dry_run: false, confirm: true });
+
+    let args = UpdatePageArgs {
+        id_or_url: page_id.to_string(),
+        title: None,
+        body: None,
+        find: None,
+        replace: None,
+        append: None,
+        prepend: None,
+        set_cell: Some(vec![
+            "支付网关".to_string(),
+            "状态".to_string(),
+            "[Status: DONE]".to_string(),
+        ]),
+        append_row: None,
+    };
+
+    let res = confluence.update_page(&args).await.unwrap();
+    assert_eq!(res["status"], "success");
+    assert_eq!(res["version"], 2);
+    assert_eq!(res["mode"], "set_cell");
+    assert_eq!(res["diff"]["column"], "状态");
+    assert_eq!(res["diff"]["new_value"], "[Status: DONE]");
 }

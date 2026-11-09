@@ -1,6 +1,6 @@
 [package]
 name = "atlassian-cli"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Atlassian 私有部署统一 AI CLI (Jira + Confluence + Bitbucket)"
 
@@ -13,6 +13,7 @@ reqwest-retry = "0.6"
 urlencoding = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+quick-xml = "0.36"
 anyhow = "1.0"
 dirs-next = "2.0"
 rpassword = "7.3"

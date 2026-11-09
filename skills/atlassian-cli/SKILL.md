@@ -35,7 +35,8 @@ metadata:
 | "查 John 的邮箱 / @语法" | `jira user` | `atlassian-cli jira user "John"` ➔ 获得 `[~john.doe]` |
 | "克隆这张票 / 批量建单" | `jira clone` / `bulk-create` | `atlassian-cli jira clone PROJ-123 --link --confirm` |
 | "搜 Confluence 设计文档" | `confluence search` | `atlassian-cli confluence search "关键字"` |
-| "查 Confluence 页面内容" | `confluence get` | `atlassian-cli confluence get 123456` (自动按 2000 字截断防爆 Token) |
+| "查 Confluence 页面内容" | `confluence get` | `atlassian-cli confluence get 123456` (支持 `--section` / `--table`) |
+| "修改表格单元格 / 追加行" | `confluence update` | `atlassian-cli confluence update 123456 --set-cell "行锚点" "列名" "新值" --confirm` |
 | "安全查找替换文档内容" | `confluence update` | `atlassian-cli confluence update 123456 --find "老文本" --replace "新文本" --confirm` |
 | "看下这个 PR 改了什么" | `bitbucket diff-pr` | `atlassian-cli bitbucket diff-pr 100 --stat` (先查文件清单) |
 | "发表行级代码评审意见" | `bitbucket comment-pr` | `atlassian-cli bitbucket comment-pr 100 "建议重构" --file src/lib.rs --line 42 --confirm` |

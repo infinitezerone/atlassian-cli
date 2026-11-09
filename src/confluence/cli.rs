@@ -38,6 +38,15 @@ pub struct UpdatePageArgs {
     /// 在页面最顶端插入的内容 (不改变原页面任何旧排版与宏)
     #[arg(long, allow_hyphen_values = true)]
     pub prepend: Option<String>,
+    /// 表格单元格原子更新：三元组参数 <ROW_ANCHOR> <COL> <VALUE>
+    /// 支持按列名定位 (如 "状态") 或按 1-based 列序号定位 (如 "3")，值支持宏简写如 [Status: DONE]、[~user]
+    /// 示例: --set-cell "支付网关" "状态" "DONE"
+    #[arg(long, num_args = 3, value_names = ["ROW_ANCHOR", "COL", "VALUE"], allow_hyphen_values = true)]
+    pub set_cell: Option<Vec<String>>,
+    /// 表格末尾原子增行：多元组参数 <TABLE_ANCHOR> <CELL_VALUES...>
+    /// 示例: --append-row "发版清单" "搜索模块" "[~zhangsan]" "[Status: IN_PROGRESS]" "2026-09-01"
+    #[arg(long, num_args = 2.., value_names = ["TABLE_ANCHOR", "CELL_VALUES"], allow_hyphen_values = true)]
+    pub append_row: Option<Vec<String>>,
 }
 
 /// Confluence 模块的 CLI 子命令
@@ -59,18 +68,24 @@ pub enum ConfluenceActions {
         #[arg(long, default_value_t = 10)]
         limit: u32,
     },
-    /// 获取页面内容 (默认转纯文本，支持 --title-only 仅查看元信息与标题，--raw 输出原始 HTML)
+    /// 获取页面内容 (默认转结构化 Markdown 文本保留表格与排版，支持 --title-only 仅查看元信息与标题，--raw 输出原始 Storage HTML)
     Get {
         /// 页面 ID 或网页 URL
         id: String,
         /// 仅获取页面标题与基础元信息 (不拉取任何正文，省流量省 Token)
         #[arg(long, short = 't')]
         title_only: bool,
-        /// 输出原始 Confluence Storage HTML (默认转换为清洗后的纯文本)
+        /// 输出原始 Confluence Storage HTML (默认转换为保留表格与格式的 Markdown)
         #[arg(long)]
         raw: bool,
-        /// 最大输出字符数 (默认 8000，设为 0 表示不限制)
-        #[arg(long, default_value_t = 8000)]
+        /// 按小节标题语义定向抽取正文 (如 --section "Comments" 或 --section "Description")
+        #[arg(long)]
+        section: Option<String>,
+        /// 仅定向提取指定表格 (支持 1-based 表格序号如 --table 1，或表头/内容关键字如 --table "状态")
+        #[arg(long)]
+        table: Option<String>,
+        /// 最大输出字符数 (默认 32000，设为 0 表示不限制；建议大文档单次拉取 32000~64000)
+        #[arg(long, default_value_t = 32000)]
         max_chars: usize,
         /// 字符起始偏移量 (用于续读超长文档)
         #[arg(long, default_value_t = 0)]

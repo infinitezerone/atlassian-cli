@@ -9,6 +9,28 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-09
+
+Confluence structured table mutations (`--set-cell`, `--append-row`), semantic section/table extraction (`--section`, `--table`), user mention preservation, and unified output schema.
+
+### Added
+
+- **Confluence Atomic Table Cell Mutation (`--set-cell`)**: update individual table cells precisely via `--set-cell <ROW_ANCHOR> <COL> <VALUE>` using `quick-xml` byte-offset replacement, preserving the rest of the document untouched without full-page rewrites.
+- **Confluence Table Row Appending (`--append-row`)**: append new table rows via `--append-row <TABLE_ANCHOR> <CELL_VALUES...>` without overwriting or reconstructing other rows.
+- **Selective Section & Table Extraction (`--section`, `--table`)**: extract only the target heading section (`--section "Comments"`) or target table (`--table "Audits"` or `--table 1`) to dramatically reduce token consumption.
+- **Unified Confluence Body Schema**: standardized output schema across plain-text and `--raw` modes by providing `body` and `format` fields alongside legacy `body_text`/`body_html`.
+- **Macro Shorthand Expansion**: support convenient shorthands in cell values such as `[Status: Done]`, `[~username]`, and `[Date: 2026-11-09]` with automatic XML escaping.
+
+### Changed
+
+- **Confluence Default Max Characters**: increased `--max-chars` default from 8,000 to 32,000 to handle typical medium-to-large Confluence pages without multi-turn pagination.
+- **Structured Markdown Table Rendering**: Confluence HTML storage format tables are now parsed into standard Markdown tables, preserving column alignment, multi-line cell formatting (`<br>` -> `<br>`), and empty cells instead of flattening.
+
+### Fixed
+
+- **User Mention Disappearance**: fixed bug where `<ri:user ri:userkey="...">` and `<ac:link>` user mentions were stripped to blank spaces (`Hi  san,`), properly extracting display names from link body CDATA, falling back to `ri:username` or `[~user:KEY]`.
+- **Empty Table Cell Flattening**: fixed table column collapsing and lost empty cells during plain-text conversion.
+
 ## [0.5.1] - 2026-08-24
 
 Bitbucket PR metadata update (`update-pr`), PR comment editing (`comment-update-pr`), and PR comment deletion (`comment-delete-pr`).

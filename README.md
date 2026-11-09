@@ -86,14 +86,14 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira worklog-list <KEY/URL>` | List all logged worklog entries & time spent on an issue |
 | | `jira worklog-delete <KEY/URL> <WORKLOG_ID>` | Delete a specific worklog entry from an issue |
 | **Confluence** | `confluence search <Q> [--start-at N] [-t] [-s S]` | Search pages (full-text by default; `--start-at` pagination, `-t` title-only, `-s` space filter) |
-| | `confluence get <ID/URL> [-t] [--raw]` | Fetch page body (plain-text by default; `-t` for title/meta only, `--max-chars` & `--offset`) |
+| | `confluence get <ID/URL> [-t] [--raw]` | Fetch page body (Markdown formatted; supports `--section`, `--table`, `-t` title-only, `--max-chars`) |
 | | `confluence children <ID/URL>` | List direct child pages with titles, IDs & versions (0-body lightweight inspection) |
 | | `confluence spaces [--query Q]` | List or search all accessible Confluence spaces & Space Keys |
 | | `confluence attachments <ID/URL>` | List all page attachments with filename, size, and download URLs |
 | | `confluence attachment-download <ID/URL> <ID/NAME>` | Download Confluence page attachment locally with PAT authentication (`-o PATH`) |
 | | `confluence attach <ID/URL> <FILE>` | Upload a local file to a Confluence page |
 | | `confluence create --space S --title T --body B` | Create page (supports Date `<time>` pills, Jira issue cards & Mermaid diagrams) |
-| | `confluence update <ID/URL> [--find F --replace R]` | Safe page update (supports 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
+| | `confluence update <ID/URL>` | Safe page update (supports `--set-cell`, `--append-row`, 1-match `--find/--replace`, `--append`, `--prepend`, `--dry-run`) |
 | **Bitbucket** | `bitbucket list-prs` | List PRs (global user dashboard by default; or specify repo/state/role; accepts repo URL) |
 | | `bitbucket get-pr <URL/ID>` | Fetch Pull Request overview |
 | | `bitbucket user <QUERY>` | Search users by name/email (returns disambiguation info & `mention_syntax`) |
