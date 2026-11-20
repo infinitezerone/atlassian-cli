@@ -168,6 +168,7 @@ async fn test_mock_bitbucket_list_prs_dashboard() {
     assert_eq!(res["pull_requests"][0]["project"], "MOBILE");
     assert_eq!(res["pull_requests"][0]["repo"], "app-android");
     assert_eq!(res["pull_requests"][0]["author"]["username"], "john.doe");
+    assert_eq!(res["pull_requests"][0]["author"]["mention_syntax"], "@\"john.doe\"");
 }
 
 #[tokio::test]
@@ -282,6 +283,7 @@ async fn test_mock_bitbucket_create_pr_with_url() {
     assert_eq!(res["title"], title);
     assert_eq!(res["reviewers_count"], 1);
     assert_eq!(res["reviewers"][0]["username"], "lead.dev");
+    assert_eq!(res["reviewers"][0]["mention_syntax"], "@\"lead.dev\"");
 }
 
 #[tokio::test]

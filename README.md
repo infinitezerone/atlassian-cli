@@ -80,7 +80,7 @@ atlassian-cli status         # Inspect connection status & authenticated user id
 | | `jira attach <KEY/URL> <FILE>` | Upload a local file to a Jira issue |
 | | `jira create --project P --summary S ...` | Create new issue (supports type/desc/labels/assignee/priority/`--custom`/`--custom-json`) |
 | | `jira update <KEY/URL> [--summary S] ...` | Update existing issue fields (supports summary/desc/assignee/priority/labels/`--custom`/`--custom-json`) |
-| | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user (auto-sanitizes `[~...]` / `@{...}`) |
+| | `jira assign <KEY/URL> <ASSIGNEE>` | Assign/reassign issue to a user (auto-sanitizes `[~...]` / `@"..."` / `@{...}`) |
 | | `jira assignable-users <KEY/URL> [Q]` | Search valid assignable users for an issue (matches webpage autocomplete) |
 | | `jira worklog-add <KEY/URL> <TIME> [--comment C]` | Log time spent on an issue (supports `"2h 30m"`, `"1d"`, `"45m"`, `--comment`, `--started`) |
 | | `jira worklog-list <KEY/URL>` | List all logged worklog entries & time spent on an issue |

@@ -50,7 +50,7 @@ metadata:
 
 1. **先自省后调用 (Introspect Schema First)**：严禁凭记忆猜测参数名。遇到复杂参数运行 `atlassian-cli schema <command>`（如 `atlassian-cli schema jira comment`）查看严格的 JSON 签名。
 2. **写前解析实体 (Resolve Entities Before Writing)**：
-   - 查人/@人：`jira user "Name"` ➔ 提取 `[~username]`
+   - 查人/@人：Jira 用 `jira user "Name"` ➔ 提取 `[~username]`；Bitbucket 用 `bitbucket user "Name"` 或从 PR 返回的 `mention_syntax` 提取 `@"username"`（Server/DC 含特殊字符的用户名必须加双引号）
    - 查项目合法类型：`jira issue-types --project PROJ`
    - 查合法流转动作：`jira transitions PROJ-123`
    - 查自定义字段字典：`jira fields -q "Sprint"`

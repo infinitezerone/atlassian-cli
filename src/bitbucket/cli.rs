@@ -85,7 +85,7 @@ pub struct CreatePrArgs {
     /// 目标分支名 (如 main 或 release/6.2.0)
     #[arg(long, alias = "target", alias = "dest", alias = "to-branch")]
     pub to: String,
-    /// 手动指定的额外 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @{john.doe})
+    /// 手动指定的额外 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @"john.doe")
     #[arg(long, alias = "reviewer")]
     pub reviewers: Option<String>,
     /// 不自动加载 Bitbucket 网页端预设的 Default Reviewers (默认 false，即自动包含预设)
@@ -202,7 +202,7 @@ pub struct UpdatePrArgs {
     /// PR 乐观锁版本号 (可选，若不传则自动通过 API 查询当前最新版本号)
     #[arg(long, short = 'v', alias = "ver")]
     pub version: Option<u64>,
-    /// 修改后的 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @{john.doe})
+    /// 修改后的 Reviewer 用户名列表 (英文逗号分隔，如 "john.doe, jane.smith" 或 @"john.doe")
     #[arg(long, alias = "reviewer")]
     pub reviewers: Option<String>,
 }

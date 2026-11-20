@@ -7,7 +7,7 @@ use super::cli::{
 use crate::error::AppError;
 use crate::http::HttpClient;
 use crate::module::WritePolicy;
-use crate::utils::{parse_bitbucket_pr, parse_bitbucket_repo};
+use crate::utils::{format_bitbucket_mention, parse_bitbucket_pr, parse_bitbucket_repo};
 
 /// Bitbucket 产品客户端
 pub struct Bitbucket {
@@ -120,7 +120,7 @@ impl Bitbucket {
                         json!({
                             "username": uname,
                             "displayName": dname,
-                            "mention_syntax": format!("@{{{}}}", uname),
+                            "mention_syntax": format_bitbucket_mention(uname),
                         })
                     })
                     .collect::<Vec<_>>()
@@ -255,7 +255,7 @@ impl Bitbucket {
                         json!({
                             "username": uname,
                             "displayName": dname,
-                            "mention_syntax": format!("@{{{}}}", uname),
+                            "mention_syntax": format_bitbucket_mention(uname),
                         })
                     })
                     .collect::<Vec<_>>()
@@ -731,7 +731,7 @@ impl Bitbucket {
                     "email": email,
                     "active": active,
                     "exact_match": exact_match,
-                    "mention_syntax": format!("@{{{}}}", username),
+                    "mention_syntax": format_bitbucket_mention(username),
                 })
             }).collect::<Vec<_>>()
         }).unwrap_or_default();
@@ -900,7 +900,7 @@ fn extract_prs_list(raw: &Value, base_url: &str, default_repo: Option<(&str, &st
                         "author": {
                             "username": author_uname,
                             "displayName": author_dname,
-                            "mention_syntax": format!("@{{{}}}", author_uname),
+                            "mention_syntax": format_bitbucket_mention(author_uname),
                         },
                         "from_branch": from_branch,
                         "to_branch": to_branch,

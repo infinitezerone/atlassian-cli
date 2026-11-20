@@ -9,6 +9,15 @@ Changelog starts at v0.3.0; earlier v0.2.x history is not recorded here.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-20
+
+Bitbucket Server / Data Center user mention syntax fix (`@"username"`).
+
+### Fixed
+
+- **Bitbucket Server / Data Center `mention_syntax`**: replaced Bitbucket Cloud syntax (`@{username}`) with Bitbucket Server / Data Center double-quoted mention syntax (`@"username"`) across `list-prs`, `user`, `create-pr`, and `update-pr` responses so usernames containing special characters (`-`, `.`, `@`) render properly as interactive mentions in PR comments and descriptions.
+- **Username Sanitizer (`parse_username`)**: added support for stripping `@"username"` delimiters when passing mention strings into structured user parameters (e.g. `--reviewers` or `jira assign`).
+
 ## [0.6.0] - 2026-11-09
 
 Confluence structured table mutations (`--set-cell`, `--append-row`), semantic section/table extraction (`--section`, `--table`), user mention preservation, and unified output schema.

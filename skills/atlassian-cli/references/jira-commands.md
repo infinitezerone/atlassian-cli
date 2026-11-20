@@ -75,7 +75,7 @@ atlassian-cli jira assignable-users PROJ-123 "john"
 # Look up username & mention_syntax ([~username])
 atlassian-cli jira user "john"
 
-# Assign issue (auto-sanitizes [~username] or @{username} input)
+# Assign issue (auto-sanitizes [~username], @"username", or @{username} input)
 atlassian-cli jira assign PROJ-123 john.doe --confirm
 
 # Unassign issue (supports unassigned, none, or -1)

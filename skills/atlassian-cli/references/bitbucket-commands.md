@@ -43,8 +43,12 @@ atlassian-cli bitbucket comments-pr 100
 
 ## Post Code Review Comments & Approve PR
 ```bash
+# Resolve Bitbucket user mention_syntax (@"username") before mentioning users in PR comments
+# Bitbucket Server / Data Center requires double quotes around usernames containing '-', '.', etc.
+atlassian-cli bitbucket user "john"                      # returns mention_syntax: @"john.doe"
+
 # General PR comment
-atlassian-cli bitbucket comment-pr 100 --text "LGTM, overall architecture is clean." --confirm
+atlassian-cli bitbucket comment-pr 100 --text "LGTM, overall architecture is clean. cc @\"john.doe\"" --confirm
 
 # Precise file line inline comment (Code Review)
 atlassian-cli bitbucket comment-pr 100 \

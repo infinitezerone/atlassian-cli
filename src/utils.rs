@@ -310,17 +310,28 @@ pub fn parse_bitbucket_repo(
     Ok((p.to_string(), r.to_string()))
 }
 
-/// 从传入的用户名字符串中智能剥离 [~username] / @{username} / @username 等装饰标记
+/// 生成 Bitbucket Server / Data Center 的用户 `@` 提及语法。
+///
+/// Bitbucket Server / Data Center 中，当用户名包含 `-`、`.`、`@` 等特殊字符时，
+/// 必须使用双引号包裹 `@"username"` 才能被正确解析为用户提及（而 `@{username}` 是 Bitbucket Cloud 语法）。
+/// 统一返回 `@"username"` 以确保所有用户名均可在 Bitbucket Server / Data Center 中被可靠解析。
+pub fn format_bitbucket_mention(username: &str) -> String {
+    format!("@\"{}\"", username)
+}
+
+/// 从传入的用户名字符串中智能剥离 [~username] / @"username" / @{username} / @username 等装饰标记
 ///
 /// 支持格式:
 /// - `john.doe` → `john.doe`
 /// - `[~john.doe]` → `john.doe`
+/// - `@"john.doe"` → `john.doe`
 /// - `@{john.doe}` → `john.doe`
 /// - `@john.doe` → `john.doe`
 pub fn parse_username(input: &str) -> String {
     let mut trimmed = input.trim();
     if (trimmed.starts_with("[~") && trimmed.ends_with(']'))
         || (trimmed.starts_with("@{") && trimmed.ends_with('}'))
+        || (trimmed.starts_with("@\"") && trimmed.ends_with('"'))
     {
         trimmed = &trimmed[2..trimmed.len() - 1];
     } else if trimmed.starts_with('@') {
@@ -337,9 +348,16 @@ mod tests {
     fn test_parse_username() {
         assert_eq!(parse_username("john.doe"), "john.doe");
         assert_eq!(parse_username("[~john.doe]"), "john.doe");
+        assert_eq!(parse_username("@\"john.doe\""), "john.doe");
         assert_eq!(parse_username("@{john.doe}"), "john.doe");
         assert_eq!(parse_username("@john.doe"), "john.doe");
         assert_eq!(parse_username("  [~john.doe]  "), "john.doe");
+    }
+
+    #[test]
+    fn test_format_bitbucket_mention() {
+        assert_eq!(format_bitbucket_mention("john.doe"), "@\"john.doe\"");
+        assert_eq!(format_bitbucket_mention("user-name.ext"), "@\"user-name.ext\"");
     }
 
     #[test]
